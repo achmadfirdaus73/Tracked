@@ -1,0 +1,6 @@
+{
+  "name": "GeoTrack Enterprise",
+  "description": "Platform pelacakan GPS real-time enterprise dengan geofencing, rute interaktif, visualisasi grafik perjalanan, dan ekspor riwayat lokasi.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
