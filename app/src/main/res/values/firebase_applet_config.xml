@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8" standalone="no"?>
 <resources>
+    <string name="firebase_project_id" translatable="false">ardent-cycling-465314-u3</string>
     <string name="firestore_database_id" translatable="false">ai-studio-android-tracepat-7bbf96bc-8584-4c94-8542-eece2235998d</string>
 </resources>

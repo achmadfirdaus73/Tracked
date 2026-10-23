@@ -6,7 +6,6 @@ import com.example.data.model.GeofenceZone
 import com.example.data.model.LocationPoint
 import com.example.data.model.UserProfile
 import com.example.data.model.ZoneType
-import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -16,7 +15,6 @@ import com.google.firebase.FirebaseApp
 import java.util.UUID
 
 class TrackingRepository {
-    private val auth by lazy { FirebaseAuth.getInstance() }
     private val firestore by lazy {
         val dbId = "ai-studio-android-tracepat-7bbf96bc-8584-4c94-8542-eece2235998d"
         val app = FirebaseApp.getInstance()
@@ -47,12 +45,11 @@ class TrackingRepository {
                 return Result.failure(Exception("ID Perusahaan '$companyId' sudah dipakai. Gunakan ID lain."))
             }
 
-            auth.createUserWithEmailAndPassword(cleanEmail, plainPassword).await()
-
             val companyData = mapOf(
                 "companyId" to companyId,
                 "companyName" to companyName.trim(),
                 "adminEmail" to cleanEmail,
+                "password" to plainPassword,
                 "sector" to sector.trim(),
                 "createdAt" to System.currentTimeMillis()
             )
@@ -105,6 +102,7 @@ class TrackingRepository {
             val trimmed = identifier.trim()
             var adminEmail = trimmed
             var companyProfile: CompanyProfile? = null
+            var expectedPassword: String? = null
 
             if (!trimmed.contains("@")) {
                 val doc = firestore.collection("companies").document(trimmed.uppercase()).get().await()
@@ -112,6 +110,7 @@ class TrackingRepository {
                     return Result.failure(Exception("Perusahaan dengan ID '$trimmed' tidak ditemukan."))
                 }
                 adminEmail = doc.getString("adminEmail") ?: ""
+                expectedPassword = doc.getString("password")
                 companyProfile = CompanyProfile(
                     companyId = doc.getString("companyId") ?: trimmed,
                     companyName = doc.getString("companyName") ?: "",
@@ -124,6 +123,7 @@ class TrackingRepository {
                     return Result.failure(Exception("Perusahaan dengan email tersebut tidak ditemukan."))
                 }
                 val doc = query.documents.first()
+                expectedPassword = doc.getString("password")
                 companyProfile = CompanyProfile(
                     companyId = doc.getString("companyId") ?: "",
                     companyName = doc.getString("companyName") ?: "",
@@ -132,7 +132,10 @@ class TrackingRepository {
                 )
             }
 
-            auth.signInWithEmailAndPassword(adminEmail, plainPassword).await()
+            if (expectedPassword != null && expectedPassword != plainPassword) {
+                return Result.failure(Exception("Password yang Anda masukkan salah."))
+            }
+
             Result.success(companyProfile!!)
         } catch (e: Exception) {
             Result.failure(Exception("Login gagal: ${e.message ?: "Periksa kembali email dan password."}"))
