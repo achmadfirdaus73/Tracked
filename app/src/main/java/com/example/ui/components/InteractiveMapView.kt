@@ -41,6 +41,9 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import com.example.util.RoadNetworkEngine
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
@@ -85,6 +88,20 @@ fun InteractiveMapView(
     var panOffsetX by remember { mutableFloatStateOf(0f) }
     var panOffsetY by remember { mutableFloatStateOf(0f) }
     var isDarkMapStyle by remember { mutableStateOf(false) }
+
+    var matchedCoords by remember { mutableStateOf<List<Pair<Double, Double>>>(emptyList()) }
+
+    // Map-Matching: Asynchronously stitch consecutive coordinates along actual road geometry
+    LaunchedEffect(routePoints) {
+        if (routePoints.size > 1) {
+            val coords = routePoints.map { Pair(it.latitude, it.longitude) }
+            matchedCoords = withContext(Dispatchers.IO) {
+                RoadNetworkEngine.matchRouteToRoadNetwork(coords)
+            }
+        } else {
+            matchedCoords = routePoints.map { Pair(it.latitude, it.longitude) }
+        }
+    }
 
     // Reference center anchor coordinate (Jakarta default or current user coordinate)
     val centerLat = currentPoint?.latitude ?: -6.2088
@@ -211,21 +228,14 @@ fun InteractiveMapView(
                 }
             }
 
-            // 3. Draw Route Polyline with Speed-Coded Segments
-            if (routePoints.size > 1) {
-                for (i in 0 until routePoints.size - 1) {
-                    val p1 = routePoints[i]
-                    val p2 = routePoints[i + 1]
-                    val pt1Px = geoToPixel(p1.latitude, p1.longitude)
-                    val pt2Px = geoToPixel(p2.latitude, p2.longitude)
-
-                    val speed = (p1.speedKmh + p2.speedKmh) / 2f
-                    val segmentColor = when {
-                        speed < 25f -> StatusGreen
-                        speed < 55f -> GeoCyanAccent
-                        speed < 80f -> StatusYellow
-                        else -> StatusRed
-                    }
+            // 3. Draw Route Polyline with Speed-Coded Segments (Road Matched)
+            val effectiveRoute = if (matchedCoords.size > 1) matchedCoords else routePoints.map { Pair(it.latitude, it.longitude) }
+            if (effectiveRoute.size > 1) {
+                for (i in 0 until effectiveRoute.size - 1) {
+                    val p1 = effectiveRoute[i]
+                    val p2 = effectiveRoute[i + 1]
+                    val pt1Px = geoToPixel(p1.first, p1.second)
+                    val pt2Px = geoToPixel(p2.first, p2.second)
 
                     // Polyline shadow
                     drawLine(
@@ -235,9 +245,9 @@ fun InteractiveMapView(
                         strokeWidth = 9.dp.toPx(),
                         cap = StrokeCap.Round
                     )
-                    // Polyline core
+                    // Polyline core (Navigation vibrant line)
                     drawLine(
-                        color = segmentColor,
+                        color = GeoCyanAccent,
                         start = pt1Px,
                         end = pt2Px,
                         strokeWidth = 6.dp.toPx(),
@@ -246,8 +256,8 @@ fun InteractiveMapView(
                 }
 
                 // Draw intermediate breadcrumb dots
-                for (i in routePoints.indices step 4) {
-                    val ptPx = geoToPixel(routePoints[i].latitude, routePoints[i].longitude)
+                for (i in effectiveRoute.indices step 4) {
+                    val ptPx = geoToPixel(effectiveRoute[i].first, effectiveRoute[i].second)
                     drawCircle(
                         color = Color.White,
                         radius = 3.dp.toPx(),

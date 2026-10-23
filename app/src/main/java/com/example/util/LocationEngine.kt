@@ -112,13 +112,24 @@ class LocationEngine(
         onAlertTriggered: (GeofenceAlert) -> Unit
     ) {
         scope.launch(Dispatchers.IO) {
-            val geofences = repository.getGeofences(user.companyId)
-            val (activeFences, rawStatusDesc) = GeofenceEngine.evaluateGeofences(lat, lng, geofences)
+            // Automatic road snapping: snap noisy GPS coordinate onto nearest street center line
+            val snapped = RoadNetworkEngine.snapToRoad(lat, lng)
+            val effectiveLat = if (snapped.distanceMeters <= 60.0) snapped.latitude else lat
+            val effectiveLng = if (snapped.distanceMeters <= 60.0) snapped.longitude else lng
 
-            val statusDesc = if (isMock) {
-                "⚠️ FAKE GPS TERDETEKSI: $rawStatusDesc"
+            val geofences = repository.getGeofences(user.companyId)
+            val (activeFences, rawStatusDesc) = GeofenceEngine.evaluateGeofences(effectiveLat, effectiveLng, geofences)
+
+            val roadInfo = if (snapped.roadName.isNotBlank() && snapped.roadName != "Area Terbuka") {
+                "🛣️ ${snapped.roadName}"
             } else {
-                rawStatusDesc
+                null
+            }
+
+            val statusDesc = when {
+                isMock -> "⚠️ FAKE GPS TERDETEKSI: $rawStatusDesc"
+                roadInfo != null -> "$roadInfo | $rawStatusDesc"
+                else -> rawStatusDesc
             }
 
             // 1. Trigger security alert if Fake GPS detected
@@ -170,8 +181,8 @@ class LocationEngine(
                         geofenceName = fence.name,
                         eventType = "KELUAR",
                         timestamp = System.currentTimeMillis(),
-                        latitude = lat,
-                        longitude = lng,
+                        latitude = effectiveLat,
+                        longitude = effectiveLng,
                         description = "User ${user.fullName} keluar dari area ${fence.name}",
                         isSecurityWarning = false
                     )
@@ -184,8 +195,8 @@ class LocationEngine(
             val pt = LocationPoint(
                 userId = user.userId,
                 companyId = user.companyId,
-                latitude = lat,
-                longitude = lng,
+                latitude = effectiveLat,
+                longitude = effectiveLng,
                 altitude = alt,
                 speedKmh = speedKmh,
                 accuracyMeters = accuracyM,

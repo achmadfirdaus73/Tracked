@@ -29,7 +29,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import com.example.util.RoadNetworkEngine
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -85,6 +91,24 @@ fun OpenStreetMapTrackerView(
         }
     }
 
+    var roadSnappedGeoPoints by remember { mutableStateOf<List<GeoPoint>>(emptyList()) }
+    var isRoadMatched by remember { mutableStateOf(false) }
+
+    // Map-Matching: Asynchronously stitch consecutive coordinates along actual OSM road geometry
+    LaunchedEffect(routePoints) {
+        if (routePoints.size > 1) {
+            val rawCoords = routePoints.map { Pair(it.latitude, it.longitude) }
+            val matched = withContext(Dispatchers.IO) {
+                RoadNetworkEngine.matchRouteToRoadNetwork(rawCoords)
+            }
+            roadSnappedGeoPoints = matched.map { GeoPoint(it.first, it.second) }
+            isRoadMatched = true
+        } else {
+            roadSnappedGeoPoints = routePoints.map { GeoPoint(it.latitude, it.longitude) }
+            isRoadMatched = false
+        }
+    }
+
     // Auto-center camera when user coordinates change
     LaunchedEffect(currentPoint?.latitude, currentPoint?.longitude) {
         if (currentPoint != null) {
@@ -117,12 +141,23 @@ fun OpenStreetMapTrackerView(
                     map.overlays.add(polygon)
                 }
 
-                // 2. Render Route Polyline on OpenStreetMap
-                if (routePoints.size > 1) {
-                    val geoPoints = routePoints.map { GeoPoint(it.latitude, it.longitude) }
+                // 2. Render Road-Matched Route Polyline on OpenStreetMap
+                val displayPoints = if (roadSnappedGeoPoints.size > 1) roadSnappedGeoPoints else routePoints.map { GeoPoint(it.latitude, it.longitude) }
+                if (displayPoints.size > 1) {
+                    // Outer road casing outline
+                    val casingPolyline = Polyline(map).apply {
+                        setPoints(displayPoints)
+                        outlinePaint.color = android.graphics.Color.parseColor("#0C2340")
+                        outlinePaint.strokeWidth = 14f
+                        outlinePaint.strokeCap = Paint.Cap.ROUND
+                        outlinePaint.strokeJoin = Paint.Join.ROUND
+                    }
+                    map.overlays.add(casingPolyline)
+
+                    // Core road-following navigation line
                     val polyline = Polyline(map).apply {
-                        setPoints(geoPoints)
-                        outlinePaint.color = android.graphics.Color.parseColor("#0F52BA")
+                        setPoints(displayPoints)
+                        outlinePaint.color = android.graphics.Color.parseColor("#00AA13")
                         outlinePaint.strokeWidth = 10f
                         outlinePaint.strokeCap = Paint.Cap.ROUND
                         outlinePaint.strokeJoin = Paint.Join.ROUND
@@ -208,6 +243,12 @@ fun OpenStreetMapTrackerView(
                             text = "Akurasi: ±${currentPoint.accuracyMeters.toInt()}m • ${currentPoint.geofenceStatus}",
                             style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
                             color = GeoBluePrimary
+                        )
+                        Spacer(modifier = Modifier.height(3.dp))
+                        Text(
+                            text = if (isRoadMatched) "🛣️ Map-Matching: Terhubung ke Jalur Jalan" else "🛣️ Road-Snapping: Aktif",
+                            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                            color = StatusGreen
                         )
                     }
                 }
