@@ -205,4 +205,29 @@ class TrackingLogicUnitTest {
         val segments = com.example.util.RouteSegmenter.segmentRoute(listOf(pt1, pt2))
         assertEquals("Extreme distance jump must split into 2 segments", 2, segments.size)
     }
+
+    @Test
+    fun testRouteSegmenterKeepSameSegmentWhenStoppingAtSameLocation() {
+        // User stops at cafe / parking for 45 minutes without moving location (< 20 meters)
+        val pt1 = LocationPoint(
+            id = 1,
+            userId = "USR-01",
+            companyId = "CORP",
+            latitude = -6.200000,
+            longitude = 106.800000,
+            timestamp = 1000000L
+        )
+        val pt2 = LocationPoint(
+            id = 2,
+            userId = "USR-01",
+            companyId = "CORP",
+            latitude = -6.200050,
+            longitude = 106.800050, // ~8 meters away
+            timestamp = 1000000L + (45 * 60 * 1000L) // 45 minutes later
+        )
+
+        val segments = com.example.util.RouteSegmenter.segmentRoute(listOf(pt1, pt2))
+        assertEquals("Stationary stop at same place must stay in 1 continuous trip", 1, segments.size)
+        assertEquals(2, segments[0].size)
+    }
 }

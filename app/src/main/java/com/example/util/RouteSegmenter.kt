@@ -55,11 +55,15 @@ object RouteSegmenter {
                     pt.latitude, pt.longitude
                 )
 
-                val isTimeGap = timeGapMs > maxTimeGapMs
-                val isTeleportGap = (distanceM > teleportDistanceMeters && timeGapMs > teleportTimeMs) ||
-                        distanceM > extremeDistanceMeters
+                // If user stayed in the same spot (distance <= 150m, e.g. resting, customer stop, traffic),
+                // we preserve the route continuity and let StopPointDetector mark it as a stop point.
+                // We split into a new trip only if there is a location leap (distance > 150m) across sessions/time gaps,
+                // or an extreme jump (> 2000m).
+                val isExtremeJump = distanceM > extremeDistanceMeters
+                val isTeleportGap = distanceM > teleportDistanceMeters && timeGapMs > teleportTimeMs
+                val isLeapOnGapOrNewSession = (sessionMismatched || timeGapMs > maxTimeGapMs) && distanceM > 150.0
 
-                if (sessionMismatched || isTimeGap || isTeleportGap) {
+                if (isExtremeJump || isTeleportGap || isLeapOnGapOrNewSession) {
                     segments.add(currentSegment)
                     currentSegment = mutableListOf(pt)
                 } else {

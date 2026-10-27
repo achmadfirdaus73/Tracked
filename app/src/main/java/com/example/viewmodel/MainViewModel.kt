@@ -37,8 +37,13 @@ class MainViewModel(private val application: Application) : ViewModel() {
     val repository = TrackingRepository()
     val locationEngine = LocationEngine(application, repository, viewModelScope)
 
-    private val _session = MutableStateFlow<AuthSession>(AuthSession.None)
+    private val _session = MutableStateFlow<AuthSession>(AppSessionManager.currentSession)
     val session: StateFlow<AuthSession> = _session.asStateFlow()
+
+    private fun updateSession(newSession: AuthSession) {
+        _session.value = newSession
+        AppSessionManager.setSession(newSession)
+    }
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -206,7 +211,7 @@ class MainViewModel(private val application: Application) : ViewModel() {
             val result = repository.registerCompany(name, email, password, customId, sector)
             _isLoading.value = false
             result.onSuccess { company ->
-                _session.value = AuthSession.AdminSession(company)
+                updateSession(AuthSession.AdminSession(company))
                 _successMessage.value = "Perusahaan '${company.companyName}' (${company.companyId}) berhasil didaftarkan!"
             }.onFailure { err ->
                 _errorMessage.value = err.message ?: "Gagal mendaftarkan perusahaan"
@@ -221,7 +226,7 @@ class MainViewModel(private val application: Application) : ViewModel() {
             val result = repository.loginCompany(identifier, pass)
             _isLoading.value = false
             result.onSuccess { company ->
-                _session.value = AuthSession.AdminSession(company)
+                updateSession(AuthSession.AdminSession(company))
                 _successMessage.value = "Selamat datang, Administrator ${company.companyName}!"
             }.onFailure { err ->
                 _errorMessage.value = err.message ?: "Login perusahaan gagal"
@@ -236,7 +241,7 @@ class MainViewModel(private val application: Application) : ViewModel() {
             val result = repository.loginUser(companyId, email)
             _isLoading.value = false
             result.onSuccess { user ->
-                _session.value = AuthSession.UserSession(user)
+                updateSession(AuthSession.UserSession(user))
                 _successMessage.value = "Berhasil masuk sebagai ${user.fullName} (${user.companyId})"
                 // Auto start location sharing on user sign in
                 toggleLocationSharing(true)
@@ -385,7 +390,8 @@ class MainViewModel(private val application: Application) : ViewModel() {
         _isSharingLocation.value = false
         _currentPoint.value = null
         _selectedUserId.value = null
-        _session.value = AuthSession.None
+        updateSession(AuthSession.None)
+        AppSessionManager.clear()
     }
 
     override fun onCleared() {
