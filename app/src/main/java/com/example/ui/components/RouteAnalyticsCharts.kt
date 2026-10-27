@@ -59,6 +59,7 @@ import com.example.ui.theme.StatusGreen
 import com.example.ui.theme.StatusRed
 import com.example.ui.theme.StatusYellow
 import com.example.util.GeofenceEngine
+import com.example.util.RouteSegmenter
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -108,20 +109,11 @@ fun RouteAnalyticsCharts(
     var activeTab by remember { mutableIntStateOf(0) } // 0 = Kecepatan, 1 = Elevasi, 2 = Timeline Perjalanan
     var scrubRatio by remember { mutableFloatStateOf(if (selectedIndex != null) selectedIndex.toFloat() / points.size.coerceAtLeast(1) else 1f) }
 
-    // Summary calculation
-    var totalDistanceMeters = 0.0
-    for (i in 0 until points.size - 1) {
-        totalDistanceMeters += GeofenceEngine.calculateDistanceMeters(
-            points[i].latitude, points[i].longitude,
-            points[i + 1].latitude, points[i + 1].longitude
-        )
-    }
-    val totalDistanceKm = totalDistanceMeters / 1000.0
+    // Summary calculation (segmented, excluding teleport gaps between separated journeys)
+    val totalDistanceKm = RouteSegmenter.calculateSegmentedDistanceKm(points)
     val maxSpeed = points.maxOfOrNull { it.speedKmh } ?: 0f
     val avgSpeed = if (points.isNotEmpty()) points.map { it.speedKmh }.average().toFloat() else 0f
-    val durationMinutes = if (points.size > 1) {
-        ((points.last().timestamp - points.first().timestamp) / 60000L).coerceAtLeast(1)
-    } else 0L
+    val durationMinutes = RouteSegmenter.calculateActiveDurationMinutes(points).coerceAtLeast(1L)
 
     Column(modifier = modifier.fillMaxWidth()) {
         // 1. High-level Metric Cards Grid

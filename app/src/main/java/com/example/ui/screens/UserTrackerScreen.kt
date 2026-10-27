@@ -80,7 +80,9 @@ import com.example.ui.theme.StatusRed
 import com.example.ui.theme.StatusYellow
 import com.example.util.BatteryHelper
 import com.example.util.RoadNetworkEngine
+import com.example.util.RouteSegmenter
 import com.example.util.StopPointDetector
+import com.example.util.rememberCompassHeading
 import com.example.viewmodel.MainViewModel
 import kotlinx.coroutines.delay
 
@@ -101,6 +103,9 @@ fun UserTrackerScreen(
     var realBattery by remember { mutableStateOf(BatteryHelper.getBatteryStatus(context)) }
     var showChatSheet by remember { mutableStateOf(false) }
 
+    // Read real-time phone compass orientation (azimuth 0-360°)
+    val compassHeading by rememberCompassHeading(enabled = true)
+
     // Continuously read the user's actual phone battery level and charging status
     LaunchedEffect(Unit) {
         while (true) {
@@ -111,16 +116,9 @@ fun UserTrackerScreen(
 
     val isFakeGpsDetected = currentPt?.isMock == true
 
-    // Compute live telemetry metrics
+    // Compute live telemetry metrics (strictly segmented, excluding off-duty gap jumps)
     val totalDistanceKm = remember(historyPoints) {
-        var meters = 0.0
-        for (i in 0 until historyPoints.size - 1) {
-            meters += RoadNetworkEngine.calculateDistanceMeters(
-                historyPoints[i].latitude, historyPoints[i].longitude,
-                historyPoints[i + 1].latitude, historyPoints[i + 1].longitude
-            )
-        }
-        meters / 1000.0
+        RouteSegmenter.calculateSegmentedDistanceKm(historyPoints)
     }
 
     val detectedStops = remember(historyPoints) {
@@ -128,13 +126,7 @@ fun UserTrackerScreen(
     }
 
     val tripMinutes = remember(historyPoints) {
-        if (historyPoints.size >= 2) {
-            val startMs = historyPoints.first().timestamp
-            val lastMs = historyPoints.last().timestamp
-            ((lastMs - startMs) / 60000L).coerceAtLeast(0)
-        } else {
-            0L
-        }
+        RouteSegmenter.calculateActiveDurationMinutes(historyPoints)
     }
 
     Scaffold(
@@ -331,98 +323,97 @@ fun UserTrackerScreen(
                     userLabel = user.fullName,
                     isLiveTracking = isSharing,
                     vehicleType = user.vehicleType,
+                    compassHeading = compassHeading,
+                    isUserMode = true,
+                    showTopStatusPill = false,
                     modifier = Modifier.fillMaxSize()
                 )
 
-                // Top Floating Telematics HUD Strip
+                // Top Compact Floating Telematics HUD Pill (Sleek, minimal width, won't cover map or side controls)
                 Surface(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
-                        .padding(top = 10.dp, start = 12.dp, end = 12.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
-                    shadowElevation = 6.dp
+                        .padding(top = 10.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+                    shadowElevation = 5.dp,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        // Speed Gauge
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Speed, contentDescription = null, tint = GeoBluePrimary, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Column {
-                                Text(
-                                    text = "${(currentPt?.speedKmh ?: 0f).toInt()} km/h",
-                                    fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 13.sp,
-                                    color = MaterialTheme.colorScheme.onSurface
+                        // 1. Status Indicator Chip (Live vs Standby)
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (isSharing) StatusGreen.copy(alpha = 0.15f) else StatusYellow.copy(alpha = 0.15f)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(7.dp)
+                                        .background(
+                                            color = if (isSharing) StatusGreen else StatusYellow,
+                                            shape = CircleShape
+                                        )
                                 )
-                                Text("Kecepatan", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Spacer(modifier = Modifier.width(5.dp))
+                                Text(
+                                    text = if (isSharing) "LIVE" else "STANDBY",
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 10.sp,
+                                    color = if (isSharing) StatusGreen else Color(0xFFB45309)
+                                )
                             }
                         }
 
-                        Box(modifier = Modifier.width(1.dp).height(24.dp).background(MaterialTheme.colorScheme.outlineVariant))
+                        // 2. Real-time Compass Azimuth
+                        Text(
+                            text = "🧭 ${compassHeading.toInt()}°",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
 
-                        // Distance Odometer
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Route, contentDescription = null, tint = GeoCyanAccent, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Column {
-                                Text(
-                                    text = String.format("%.2f km", totalDistanceKm),
-                                    fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 13.sp,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Text("Jarak", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
+                        Box(modifier = Modifier.size(3.dp).background(MaterialTheme.colorScheme.outlineVariant, CircleShape))
 
-                        Box(modifier = Modifier.width(1.dp).height(24.dp).background(MaterialTheme.colorScheme.outlineVariant))
+                        // 3. Current Speed
+                        Text(
+                            text = "⚡ ${(currentPt?.speedKmh ?: 0f).toInt()} km/h",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = GeoBluePrimary
+                        )
 
-                        // True Battery Status
+                        Box(modifier = Modifier.size(3.dp).background(MaterialTheme.colorScheme.outlineVariant, CircleShape))
+
+                        // 4. True Battery Percentage
                         val batColor = when {
                             realBattery.isCharging -> StatusGreen
                             realBattery.percentage <= 20 -> StatusRed
                             realBattery.percentage <= 50 -> StatusYellow
                             else -> StatusGreen
                         }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = if (realBattery.isCharging) Icons.Default.BatteryChargingFull else Icons.Default.BatteryFull,
-                                contentDescription = null,
-                                tint = batColor,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Column {
-                                Text(
-                                    text = "${realBattery.percentage}%${if (realBattery.isCharging) " ⚡" else ""}",
-                                    fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 13.sp,
-                                    color = batColor
-                                )
-                                Text("Baterai", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
+                        Text(
+                            text = "${if (realBattery.isCharging) "⚡" else "🔋"}${realBattery.percentage}%",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = batColor
+                        )
 
+                        // 5. Stops (if any detected)
                         if (detectedStops.isNotEmpty()) {
-                            Box(modifier = Modifier.width(1.dp).height(24.dp).background(MaterialTheme.colorScheme.outlineVariant))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("🛑", fontSize = 14.sp)
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Column {
-                                    Text(
-                                        text = "${detectedStops.size}",
-                                        fontWeight = FontWeight.ExtraBold,
-                                        fontSize = 13.sp,
-                                        color = StatusRed
-                                    )
-                                    Text("Berhenti", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            }
+                            Box(modifier = Modifier.size(3.dp).background(MaterialTheme.colorScheme.outlineVariant, CircleShape))
+                            Text(
+                                text = "🛑 ${detectedStops.size}",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = StatusRed
+                            )
                         }
                     }
                 }

@@ -49,6 +49,9 @@ fun AppMapContainer(
     isLiveTracking: Boolean,
     modifier: Modifier = Modifier,
     vehicleType: VehicleType = VehicleType.MOTORCYCLE,
+    compassHeading: Float = 0f,
+    isUserMode: Boolean = false,
+    showTopStatusPill: Boolean = !isUserMode,
     highlightPointIndex: Int? = null,
     onMapCenterRequested: () -> Unit = {}
 ) {
@@ -64,6 +67,9 @@ fun AppMapContainer(
                     userLabel = userLabel,
                     vehicleType = vehicleType,
                     isLiveTracking = isLiveTracking,
+                    compassHeading = compassHeading,
+                    isUserMode = isUserMode,
+                    showTopStatusPill = showTopStatusPill,
                     onMapCenterRequested = onMapCenterRequested,
                     modifier = Modifier.fillMaxSize()
                 )
@@ -76,6 +82,9 @@ fun AppMapContainer(
                     userLabel = userLabel,
                     vehicleType = vehicleType,
                     isLiveTracking = isLiveTracking,
+                    compassHeading = compassHeading,
+                    isUserMode = isUserMode,
+                    showTopStatusPill = showTopStatusPill,
                     highlightPointIndex = highlightPointIndex,
                     onMapCenterRequested = onMapCenterRequested,
                     modifier = Modifier.fillMaxSize()

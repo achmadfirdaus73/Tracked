@@ -6,6 +6,7 @@ data class LocationPoint(
     val id: Long = 0,
     val userId: String,
     val companyId: String,
+    val sessionId: String = "",
     val latitude: Double,
     val longitude: Double,
     val altitude: Double = 0.0,
@@ -64,11 +65,11 @@ enum class VehicleType(
     val iconEmoji: String,
     val code: String
 ) {
-    MOTORCYCLE("Sepeda Motor", "🛵", "motorcycle"),
+    MOTORCYCLE("Motor", "🏍️", "motorcycle"),
     CAR("Mobil", "🚗", "car"),
-    BICYCLE("Sepeda Gowes", "🚲", "bicycle"),
-    TRUCK("Truk / Pickup", "🚚", "truck"),
-    WALK("Jalan Kaki / Kurir", "🚶", "walk");
+    BICYCLE("Sepeda", "🚲", "bicycle"),
+    TRUCK("Truk", "🚚", "truck"),
+    WALK("Pejalan Kaki", "🚶", "walk");
 
     companion object {
         fun fromCode(code: String?): VehicleType {

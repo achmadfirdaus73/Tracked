@@ -104,4 +104,105 @@ class TrackingLogicUnitTest {
         val isMock = com.example.util.FakeGpsDetector.isLocationMock(null)
         assertFalse(isMock)
     }
+
+    @Test
+    fun testRouteSegmenterSplitBySessionId() {
+        // Point 1 and 2 at location A in Session 1
+        val pt1 = LocationPoint(
+            id = 1,
+            userId = "USR-01",
+            companyId = "CORP",
+            sessionId = "SESSION-A",
+            latitude = -6.2000,
+            longitude = 106.8000,
+            timestamp = 1000L
+        )
+        val pt2 = LocationPoint(
+            id = 2,
+            userId = "USR-01",
+            companyId = "CORP",
+            sessionId = "SESSION-A",
+            latitude = -6.2005,
+            longitude = 106.8005,
+            timestamp = 2000L
+        )
+        // User turns off sharelok, travels to C (5 km away), and turns sharelok on with Session 2
+        val pt3 = LocationPoint(
+            id = 3,
+            userId = "USR-01",
+            companyId = "CORP",
+            sessionId = "SESSION-C",
+            latitude = -6.2500,
+            longitude = 106.8500,
+            timestamp = 5000L
+        )
+        val pt4 = LocationPoint(
+            id = 4,
+            userId = "USR-01",
+            companyId = "CORP",
+            sessionId = "SESSION-C",
+            latitude = -6.2505,
+            longitude = 106.8505,
+            timestamp = 6000L
+        )
+
+        val segments = com.example.util.RouteSegmenter.segmentRoute(listOf(pt1, pt2, pt3, pt4))
+        assertEquals("Should be split into 2 distinct segments", 2, segments.size)
+        assertEquals(2, segments[0].size)
+        assertEquals(2, segments[1].size)
+
+        // Segmented distance should ONLY sum within Segment 1 and within Segment 2
+        val segmentedDistance = com.example.util.RouteSegmenter.calculateSegmentedDistanceKm(listOf(pt1, pt2, pt3, pt4))
+        // Distance pt1->pt2 is ~78 meters, pt3->pt4 is ~78 meters. Total < 0.2 km.
+        // If unsegmented, it would include the 7.5 km leap between pt2 and pt3!
+        assertTrue("Segmented distance should be under 0.3 km (was $segmentedDistance km)", segmentedDistance < 0.3)
+    }
+
+    @Test
+    fun testRouteSegmenterSplitByTimeGap() {
+        val pt1 = LocationPoint(
+            id = 1,
+            userId = "USR-01",
+            companyId = "CORP",
+            latitude = -6.2000,
+            longitude = 106.8000,
+            timestamp = 1000000L
+        )
+        // Next point 30 minutes later (> 15 min gap threshold)
+        val pt2 = LocationPoint(
+            id = 2,
+            userId = "USR-01",
+            companyId = "CORP",
+            latitude = -6.2020,
+            longitude = 106.8020,
+            timestamp = 1000000L + (30 * 60 * 1000L)
+        )
+
+        val segments = com.example.util.RouteSegmenter.segmentRoute(listOf(pt1, pt2))
+        assertEquals("30-minute inactivity gap must split into 2 segments", 2, segments.size)
+    }
+
+    @Test
+    fun testRouteSegmenterSplitByExtremeJump() {
+        val pt1 = LocationPoint(
+            id = 1,
+            userId = "USR-01",
+            companyId = "CORP",
+            latitude = -6.2000,
+            longitude = 106.8000,
+            timestamp = 1000L
+        )
+        // Jump > 5 km away
+        val pt2 = LocationPoint(
+            id = 2,
+            userId = "USR-01",
+            companyId = "CORP",
+            latitude = -6.2700,
+            longitude = 106.8000,
+            timestamp = 3000L
+        )
+
+        val segments = com.example.util.RouteSegmenter.segmentRoute(listOf(pt1, pt2))
+        assertEquals("Extreme distance jump must split into 2 segments", 2, segments.size)
+    }
 }

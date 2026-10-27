@@ -1146,11 +1146,11 @@ fun AdminDashboardScreen(
                                         Text(vType.label, fontWeight = FontWeight.SemiBold)
                                         Text(
                                             when (vType) {
-                                                VehicleType.MOTORCYCLE -> "Motor / Roda Dua"
-                                                VehicleType.CAR -> "Mobil Pribadi / Dinas"
-                                                VehicleType.BICYCLE -> "Sepeda Patroli / Kurir"
-                                                VehicleType.TRUCK -> "Truk Angkut / Box Armada"
-                                                VehicleType.WALK -> "Petugas Lapangan / Pejalan"
+                                                VehicleType.MOTORCYCLE -> "Armada Sepeda Motor"
+                                                VehicleType.CAR -> "Armada Mobil"
+                                                VehicleType.BICYCLE -> "Armada Sepeda"
+                                                VehicleType.TRUCK -> "Armada Truk Logistik"
+                                                VehicleType.WALK -> "Pejalan Kaki"
                                             },
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant

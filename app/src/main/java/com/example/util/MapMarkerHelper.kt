@@ -6,7 +6,9 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.RadialGradient
 import android.graphics.RectF
+import android.graphics.Shader
 import android.graphics.Typeface
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
@@ -108,7 +110,8 @@ object MapMarkerHelper {
     }
 
     /**
-     * Creates a custom Vehicle Pin marker based on admin-selected vehicle (Motor, Mobil, Sepeda, etc.).
+     * Creates a high-definition, professional navigation marker puck with dynamic compass radar beam
+     * and crisp custom vector silhouette for Motor, Mobil, Sepeda, Truk, and Pejalan Kaki.
      */
     fun createVehicleMarkerDrawable(
         context: Context,
@@ -116,49 +119,288 @@ object MapMarkerHelper {
         isLive: Boolean,
         isMock: Boolean
     ): Drawable {
-        val width = 130
-        val height = 150
-        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val size = 160
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
+
+        val cx = size / 2f
+        val cy = size / 2f
 
         val paint = Paint(Paint.ANTI_ALIAS_FLAG)
 
-        // Pin shadow
-        paint.color = Color.argb(60, 0, 0, 0)
-        canvas.drawCircle(width / 2f, height - 14f, 12f, paint)
-
-        // Pin stem/pointer
-        val pinColor = when {
-            isMock -> Color.parseColor("#EF4444")
-            isLive -> Color.parseColor("#0F52BA") // Brand Blue
-            else -> Color.parseColor("#64748B") // Gray offline
+        val primaryThemeColor = when {
+            isMock -> Color.parseColor("#EF4444") // Red alert
+            isLive -> Color.parseColor("#0F52BA") // Premium Navy/Sapphire Blue
+            else -> Color.parseColor("#475569") // Slate Gray
         }
 
-        val pointer = Path().apply {
-            moveTo(width / 2f, height - 8f)
-            lineTo(width / 2f - 22f, 85f)
-            lineTo(width / 2f + 22f, 85f)
-            close()
+        val accentColor = when {
+            isMock -> Color.parseColor("#F87171")
+            isLive -> Color.parseColor("#00D2FF") // Cyan glow
+            else -> Color.parseColor("#94A3B8")
         }
-        paint.color = pinColor
+
+        // 1. Radar / Compass Field Cone (Pointing forward / Upwards on the marker bitmap)
+        if (isLive && !isMock) {
+            val radarPath = Path().apply {
+                moveTo(cx, cy)
+                lineTo(cx - 52f, 6f)
+                quadTo(cx, -6f, cx + 52f, 6f)
+                close()
+            }
+            paint.shader = RadialGradient(
+                cx, cy, 80f,
+                intArrayOf(Color.argb(120, 0, 210, 255), Color.argb(40, 15, 82, 186), Color.TRANSPARENT),
+                floatArrayOf(0f, 0.6f, 1f),
+                Shader.TileMode.CLAMP
+            )
+            paint.style = Paint.Style.FILL
+            canvas.drawPath(radarPath, paint)
+            paint.shader = null
+
+            // Forward navigation chevron tip
+            val chevronPath = Path().apply {
+                moveTo(cx, 10f)
+                lineTo(cx - 10f, 26f)
+                lineTo(cx, 20f)
+                lineTo(cx + 10f, 26f)
+                close()
+            }
+            paint.color = Color.parseColor("#00D2FF")
+            canvas.drawPath(chevronPath, paint)
+        }
+
+        // 2. Drop Shadow for the central puck
+        paint.color = Color.argb(70, 0, 0, 0)
         paint.style = Paint.Style.FILL
-        canvas.drawPath(pointer, paint)
+        canvas.drawCircle(cx, cy + 4f, 42f, paint)
 
-        // Pin circle
-        canvas.drawCircle(width / 2f, 60f, 48f, paint)
+        // 3. Outer Glowing Ring / Bezel
+        paint.color = accentColor
+        paint.style = Paint.Style.FILL
+        canvas.drawCircle(cx, cy, 40f, paint)
 
-        // White outer ring
+        // 4. Solid Inner Core Puck
+        paint.color = primaryThemeColor
+        canvas.drawCircle(cx, cy, 35f, paint)
+
+        // 5. Crisp White Border Accent
         paint.color = Color.WHITE
         paint.style = Paint.Style.STROKE
-        paint.strokeWidth = 6f
-        canvas.drawCircle(width / 2f, 60f, 48f, paint)
+        paint.strokeWidth = 4f
+        canvas.drawCircle(cx, cy, 35f, paint)
 
-        // Inner vehicle emoji icon
+        // 6. Draw Detailed Custom Vector Vehicle Silhouette (Crisp, High-Precision White Art)
         paint.style = Paint.Style.FILL
-        paint.textAlign = Paint.Align.CENTER
-        paint.textSize = 42f
-        canvas.drawText(vehicleType.iconEmoji, width / 2f, 74f, paint)
+        paint.strokeWidth = 0f
+        paint.color = Color.WHITE
+
+        drawCustomVehicleIcon(canvas, cx, cy, vehicleType, paint)
 
         return BitmapDrawable(context.resources, bitmap)
+    }
+
+    /**
+     * Draws a beautifully proportioned, crisp vector silhouette for each vehicle type.
+     */
+    private fun drawCustomVehicleIcon(
+        canvas: Canvas,
+        cx: Float,
+        cy: Float,
+        type: VehicleType,
+        paint: Paint
+    ) {
+        when (type) {
+            VehicleType.MOTORCYCLE -> {
+                // Motor: Sport-commuter forward top-profile (Handlebars, windshield, fuel tank, sleek tail)
+                val bikePath = Path().apply {
+                    // Windshield / front headlight
+                    moveTo(cx, cy - 22f)
+                    lineTo(cx + 7f, cy - 14f)
+                    lineTo(cx + 12f, cy - 11f) // right handlebar
+                    lineTo(cx + 8f, cy - 9f)
+                    // Tank & Frame
+                    lineTo(cx + 9f, cy)
+                    lineTo(cx + 5f, cy + 12f)
+                    lineTo(cx + 3f, cy + 20f) // rear tail
+                    lineTo(cx - 3f, cy + 20f)
+                    lineTo(cx - 5f, cy + 12f)
+                    lineTo(cx - 9f, cy)
+                    // Left handlebar
+                    lineTo(cx - 8f, cy - 9f)
+                    lineTo(cx - 12f, cy - 11f)
+                    lineTo(cx - 7f, cy - 14f)
+                    close()
+                }
+                canvas.drawPath(bikePath, paint)
+
+                // Rider helmet circle in center
+                paint.color = Color.parseColor("#0C2340")
+                canvas.drawCircle(cx, cy - 3f, 6.5f, paint)
+                paint.color = Color.WHITE
+                canvas.drawCircle(cx, cy - 3f, 4f, paint)
+            }
+
+            VehicleType.CAR -> {
+                // Mobil: Aerodynamic modern sedan top-view (windshield, roof, rear window)
+                val carBody = Path().apply {
+                    moveTo(cx, cy - 24f) // front bumper
+                    quadTo(cx + 14f, cy - 22f, cx + 14f, cy - 10f)
+                    // side mirrors
+                    lineTo(cx + 18f, cy - 8f)
+                    lineTo(cx + 14f, cy - 4f)
+                    // side body
+                    lineTo(cx + 14f, cy + 14f)
+                    quadTo(cx + 14f, cy + 24f, cx, cy + 24f) // rear bumper
+                    quadTo(cx - 14f, cy + 24f, cx - 14f, cy + 14f)
+                    // left mirror
+                    lineTo(cx - 14f, cy - 4f)
+                    lineTo(cx - 18f, cy - 8f)
+                    lineTo(cx - 14f, cy - 10f)
+                    quadTo(cx - 14f, cy - 22f, cx, cy - 24f)
+                    close()
+                }
+                canvas.drawPath(carBody, paint)
+
+                // Windshield & roof cutouts for high-end automotive look
+                paint.color = Color.parseColor("#0C2340")
+                // Front Windshield
+                val frontWindshield = Path().apply {
+                    moveTo(cx, cy - 16f)
+                    lineTo(cx + 10f, cy - 12f)
+                    lineTo(cx + 9f, cy - 7f)
+                    lineTo(cx - 9f, cy - 7f)
+                    lineTo(cx - 10f, cy - 12f)
+                    close()
+                }
+                canvas.drawPath(frontWindshield, paint)
+
+                // Rear Windshield
+                val rearWindshield = Path().apply {
+                    moveTo(cx - 8f, cy + 8f)
+                    lineTo(cx + 8f, cy + 8f)
+                    lineTo(cx + 9f, cy + 13f)
+                    lineTo(cx - 9f, cy + 13f)
+                    close()
+                }
+                canvas.drawPath(rearWindshield, paint)
+                paint.color = Color.WHITE
+            }
+
+            VehicleType.BICYCLE -> {
+                // Sepeda: Commuter bicycle silhouette
+                paint.style = Paint.Style.STROKE
+                paint.strokeWidth = 3.5f
+
+                // Front Wheel & Rear Wheel
+                canvas.drawCircle(cx, cy - 14f, 7.5f, paint)
+                canvas.drawCircle(cx, cy + 14f, 7.5f, paint)
+
+                // Bike frame lines
+                val framePath = Path().apply {
+                    moveTo(cx, cy - 14f) // front axle
+                    lineTo(cx, cy - 2f)   // head tube / handlebars
+                    lineTo(cx, cy + 14f)  // rear axle
+                    moveTo(cx - 7f, cy - 4f) // handlebars crossbar
+                    lineTo(cx + 7f, cy - 4f)
+                }
+                canvas.drawPath(framePath, paint)
+
+                // Saddle
+                paint.style = Paint.Style.FILL
+                canvas.drawRoundRect(
+                    RectF(cx - 4f, cy + 3f, cx + 4f, cy + 7f),
+                    2f, 2f, paint
+                )
+            }
+
+            VehicleType.TRUCK -> {
+                // Truk: Commercial utility transport truck top-view
+                val truckPath = Path().apply {
+                    // Cab
+                    moveTo(cx - 13f, cy - 22f)
+                    lineTo(cx + 13f, cy - 22f)
+                    lineTo(cx + 13f, cy - 7f)
+                    lineTo(cx - 13f, cy - 7f)
+                    close()
+
+                    // Large Cargo Box
+                    moveTo(cx - 15f, cy - 5f)
+                    lineTo(cx + 15f, cy - 5f)
+                    lineTo(cx + 15f, cy + 23f)
+                    lineTo(cx - 15f, cy + 23f)
+                    close()
+                }
+                canvas.drawPath(truckPath, paint)
+
+                // Windshield cutout
+                paint.color = Color.parseColor("#0C2340")
+                canvas.drawRoundRect(
+                    RectF(cx - 10f, cy - 19f, cx + 10f, cy - 12f),
+                    3f, 3f, paint
+                )
+
+                // Cargo rib accent line
+                paint.style = Paint.Style.STROKE
+                paint.strokeWidth = 2f
+                paint.color = Color.parseColor("#0C2340")
+                canvas.drawLine(cx, cy - 3f, cx, cy + 21f, paint)
+                paint.style = Paint.Style.FILL
+                paint.color = Color.WHITE
+            }
+
+            VehicleType.WALK -> {
+                // Pejalan Kaki: Dynamic, active pedestrian silhouette
+                // Head
+                canvas.drawCircle(cx, cy - 16f, 5.5f, paint)
+
+                // Body and limbs
+                val bodyPath = Path().apply {
+                    // Torso
+                    moveTo(cx - 3.5f, cy - 9f)
+                    lineTo(cx + 3.5f, cy - 9f)
+                    lineTo(cx + 4.5f, cy + 3f)
+                    lineTo(cx - 4.5f, cy + 3f)
+                    close()
+
+                    // Forward leg
+                    moveTo(cx + 1.5f, cy + 3f)
+                    lineTo(cx + 9f, cy + 14f)
+                    lineTo(cx + 14f, cy + 16f)
+                    lineTo(cx + 12f, cy + 18f)
+                    lineTo(cx + 6f, cy + 16f)
+                    lineTo(cx, cy + 5f)
+                    close()
+
+                    // Back leg
+                    moveTo(cx - 2f, cy + 3f)
+                    lineTo(cx - 7f, cy + 13f)
+                    lineTo(cx - 11f, cy + 21f)
+                    lineTo(cx - 14f, cy + 19f)
+                    lineTo(cx - 10f, cy + 11f)
+                    lineTo(cx - 4f, cy + 4f)
+                    close()
+
+                    // Forward swinging arm
+                    moveTo(cx + 3.5f, cy - 8f)
+                    lineTo(cx + 9f, cy - 1f)
+                    lineTo(cx + 14f, cy + 3f)
+                    lineTo(cx + 12.5f, cy + 4.5f)
+                    lineTo(cx + 7.5f, cy)
+                    lineTo(cx + 2.5f, cy - 6f)
+                    close()
+
+                    // Back swinging arm
+                    moveTo(cx - 3.5f, cy - 8f)
+                    lineTo(cx - 9f, cy - 2f)
+                    lineTo(cx - 13f, cy - 4f)
+                    lineTo(cx - 12f, cy - 6f)
+                    lineTo(cx - 8f, cy - 4f)
+                    lineTo(cx - 2.5f, cy - 6f)
+                    close()
+                }
+                canvas.drawPath(bodyPath, paint)
+            }
+        }
     }
 }

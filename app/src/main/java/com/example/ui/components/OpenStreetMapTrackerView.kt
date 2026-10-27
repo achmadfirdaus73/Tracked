@@ -49,6 +49,7 @@ import com.example.data.model.GeofenceZone
 import com.example.data.model.LocationPoint
 import com.example.data.model.VehicleType
 import com.example.util.MapMarkerHelper
+import com.example.util.RouteSegmenter
 import com.example.util.StopPointDetector
 import com.example.ui.theme.GeoBluePrimary
 import com.example.ui.theme.GeoCyanAccent
@@ -73,6 +74,9 @@ fun OpenStreetMapTrackerView(
     userLabel: String = "User",
     vehicleType: VehicleType = VehicleType.MOTORCYCLE,
     isLiveTracking: Boolean = true,
+    compassHeading: Float = 0f,
+    isUserMode: Boolean = false,
+    showTopStatusPill: Boolean = !isUserMode,
     onMapCenterRequested: () -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -89,40 +93,67 @@ fun OpenStreetMapTrackerView(
             setTileSource(TileSourceFactory.MAPNIK) // Free OpenStreetMap tiles
             setMultiTouchControls(true)
             zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
-            controller.setZoom(16.5)
+            val initialZoom = if (isUserMode && isLiveTracking) 18.0 else 16.5
+            controller.setZoom(initialZoom)
             val initialLat = currentPoint?.latitude ?: routePoints.lastOrNull()?.latitude ?: -6.2088
             val initialLng = currentPoint?.longitude ?: routePoints.lastOrNull()?.longitude ?: 106.8456
             controller.setCenter(GeoPoint(initialLat, initialLng))
         }
     }
 
-    var roadSnappedGeoPoints by remember { mutableStateOf<List<GeoPoint>>(emptyList()) }
-    var isRoadMatched by remember { mutableStateOf(false) }
+    val routeSegments = remember(routePoints) {
+        RouteSegmenter.segmentRoute(routePoints)
+    }
+    var roadSnappedGeoSegments by remember { mutableStateOf<List<List<GeoPoint>>>(emptyList()) }
 
     // Detect Stop Points (periods of staying stationary for 5-10+ minutes)
     val detectedStops = remember(routePoints) {
         StopPointDetector.detectStopPoints(routePoints, minDurationMinutes = 5)
     }
 
-    // Map-Matching: Asynchronously stitch consecutive coordinates along actual OSM road geometry
-    LaunchedEffect(routePoints) {
-        if (routePoints.size > 1) {
-            val rawCoords = routePoints.map { Pair(it.latitude, it.longitude) }
-            val matched = withContext(Dispatchers.IO) {
-                RoadNetworkEngine.matchRouteToRoadNetwork(rawCoords)
+    // Auto zoom-in when live tracking is active on the user side
+    LaunchedEffect(isLiveTracking, isUserMode) {
+        if (isUserMode && isLiveTracking && currentPoint != null) {
+            mapView.controller.setZoom(18.0)
+            mapView.controller.animateTo(GeoPoint(currentPoint.latitude, currentPoint.longitude))
+        }
+    }
+
+    // Map-Matching: Asynchronously stitch consecutive coordinates along actual OSM road geometry PER SEGMENT
+    LaunchedEffect(routeSegments) {
+        if (routeSegments.isNotEmpty()) {
+            val matchedSegments = withContext(Dispatchers.IO) {
+                routeSegments.map { segment ->
+                    if (segment.size > 1) {
+                        val rawCoords = segment.map { Pair(it.latitude, it.longitude) }
+                        val matched = RoadNetworkEngine.matchRouteToRoadNetwork(rawCoords)
+                        matched.map { GeoPoint(it.first, it.second) }
+                    } else {
+                        segment.map { GeoPoint(it.latitude, it.longitude) }
+                    }
+                }
             }
-            roadSnappedGeoPoints = matched.map { GeoPoint(it.first, it.second) }
-            isRoadMatched = true
+            roadSnappedGeoSegments = matchedSegments
         } else {
-            roadSnappedGeoPoints = routePoints.map { GeoPoint(it.latitude, it.longitude) }
-            isRoadMatched = false
+            roadSnappedGeoSegments = emptyList()
         }
     }
 
     // Auto-center camera when user coordinates change
     LaunchedEffect(currentPoint?.latitude, currentPoint?.longitude) {
         if (currentPoint != null) {
-            mapView.controller.animateTo(GeoPoint(currentPoint.latitude, currentPoint.longitude))
+            if (isUserMode && isLiveTracking) {
+                mapView.controller.animateTo(GeoPoint(currentPoint.latitude, currentPoint.longitude))
+            } else {
+                mapView.controller.animateTo(GeoPoint(currentPoint.latitude, currentPoint.longitude))
+            }
+        }
+    }
+
+    // Rotate marker smoothly when compass heading changes
+    LaunchedEffect(compassHeading) {
+        if (compassHeading > 0f) {
+            mapView.invalidate()
         }
     }
 
@@ -151,55 +182,64 @@ fun OpenStreetMapTrackerView(
                     map.overlays.add(polygon)
                 }
 
-                // 2. Render Road-Matched Route Polyline on OpenStreetMap
-                val displayPoints = if (roadSnappedGeoPoints.size > 1) roadSnappedGeoPoints else routePoints.map { GeoPoint(it.latitude, it.longitude) }
-                if (displayPoints.size > 1) {
-                    // Outer road casing outline
-                    val casingPolyline = Polyline(map).apply {
-                        setPoints(displayPoints)
-                        outlinePaint.color = android.graphics.Color.parseColor("#0C2340") // Deep Navy casing
-                        outlinePaint.strokeWidth = 13f
-                        outlinePaint.strokeCap = Paint.Cap.ROUND
-                        outlinePaint.strokeJoin = Paint.Join.ROUND
-                    }
-                    map.overlays.add(casingPolyline)
+                // 2. Render Road-Matched Route Polylines on OpenStreetMap (Segmented without teleport lines)
+                val displaySegments = if (roadSnappedGeoSegments.isNotEmpty()) {
+                    roadSnappedGeoSegments
+                } else {
+                    routeSegments.map { seg -> seg.map { GeoPoint(it.latitude, it.longitude) } }
+                }
 
-                    // Core road-following navigation line (Enterprise Cyan-Blue)
-                    val polyline = Polyline(map).apply {
-                        setPoints(displayPoints)
-                        outlinePaint.color = android.graphics.Color.parseColor("#0284C7") // Sky/Cyan Blue
-                        outlinePaint.strokeWidth = 9f
-                        outlinePaint.strokeCap = Paint.Cap.ROUND
-                        outlinePaint.strokeJoin = Paint.Join.ROUND
-                    }
-                    map.overlays.add(polyline)
-
-                    // 2a. Start marker (Distinct Emerald Green START Pin)
-                    val startPt = routePoints.first()
-                    val startMarker = Marker(map).apply {
-                        position = GeoPoint(startPt.latitude, startPt.longitude)
-                        icon = MapMarkerHelper.createStartMarkerDrawable(context)
-                        title = "🏁 Titik Awal Keberangkatan"
-                        snippet = "Mulai: ${StopPointDetector.formatTime(startPt.timestamp)}"
-                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                    }
-                    map.overlays.add(startMarker)
-
-                    // 2b. Stop Point markers (Stops >= 5/10 minutes)
-                    for (stop in detectedStops) {
-                        val stopMarker = Marker(map).apply {
-                            position = GeoPoint(stop.latitude, stop.longitude)
-                            icon = MapMarkerHelper.createStopMarkerDrawable(context, stop.durationMinutes)
-                            title = "🛑 Titik Berhenti: ${stop.durationMinutes} Menit"
-                            snippet = "Waktu: ${StopPointDetector.formatTime(stop.startTimestamp)} - ${StopPointDetector.formatTime(stop.endTimestamp)}"
-                            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                for ((segIdx, segPoints) in displaySegments.withIndex()) {
+                    if (segPoints.size > 1) {
+                        // Outer road casing outline
+                        val casingPolyline = Polyline(map).apply {
+                            setPoints(segPoints)
+                            outlinePaint.color = android.graphics.Color.parseColor("#0C2340") // Deep Navy casing
+                            outlinePaint.strokeWidth = 13f
+                            outlinePaint.strokeCap = Paint.Cap.ROUND
+                            outlinePaint.strokeJoin = Paint.Join.ROUND
                         }
-                        map.overlays.add(stopMarker)
+                        map.overlays.add(casingPolyline)
+
+                        // Core road-following navigation line (Enterprise Cyan-Blue)
+                        val polyline = Polyline(map).apply {
+                            setPoints(segPoints)
+                            outlinePaint.color = android.graphics.Color.parseColor("#0284C7") // Sky/Cyan Blue
+                            outlinePaint.strokeWidth = 9f
+                            outlinePaint.strokeCap = Paint.Cap.ROUND
+                            outlinePaint.strokeJoin = Paint.Join.ROUND
+                        }
+                        map.overlays.add(polyline)
+
+                        // Start marker for this segment (Emerald Green START Pin)
+                        val startGeo = segPoints.first()
+                        val startPt = routeSegments.getOrNull(segIdx)?.firstOrNull()
+                        val startMarker = Marker(map).apply {
+                            position = startGeo
+                            icon = MapMarkerHelper.createStartMarkerDrawable(context)
+                            title = if (segIdx == 0) "🏁 Titik Awal Keberangkatan" else "🏁 Mulai Trip #${segIdx + 1}"
+                            snippet = if (startPt != null) "Mulai: ${StopPointDetector.formatTime(startPt.timestamp)}" else null
+                            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                        }
+                        map.overlays.add(startMarker)
                     }
+                }
+
+                // 2b. Stop Point markers (Stops >= 5/10 minutes)
+                for (stop in detectedStops) {
+                    val stopMarker = Marker(map).apply {
+                        position = GeoPoint(stop.latitude, stop.longitude)
+                        icon = MapMarkerHelper.createStopMarkerDrawable(context, stop.durationMinutes)
+                        title = "🛑 Titik Berhenti: ${stop.durationMinutes} Menit"
+                        snippet = "Waktu: ${StopPointDetector.formatTime(stop.startTimestamp)} - ${StopPointDetector.formatTime(stop.endTimestamp)}"
+                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                    }
+                    map.overlays.add(stopMarker)
                 }
 
                 // 3. Render Live User GPS Position Marker (Admin-Selected Vehicle Pin: Motor/Mobil/Sepeda/Truk)
                 if (currentPoint != null) {
+                    val effectiveBearing = if (compassHeading > 0f) compassHeading else currentPoint.bearing
                     val userMarker = Marker(map).apply {
                         position = GeoPoint(currentPoint.latitude, currentPoint.longitude)
                         icon = MapMarkerHelper.createVehicleMarkerDrawable(
@@ -215,8 +255,8 @@ fun OpenStreetMapTrackerView(
                             currentPoint.geofenceStatus,
                             currentPoint.accuracyMeters
                         )
-                        rotation = currentPoint.bearing
-                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                        rotation = effectiveBearing
+                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                     }
                     map.overlays.add(userMarker)
                 }
@@ -228,63 +268,65 @@ fun OpenStreetMapTrackerView(
                 .testTag("osm_map_view")
         )
 
-        // Floating Modern Telematics HUD for OSM Map
+        // Floating Modern Telematics HUD for OSM Map (Only in Admin overview, hidden in User mode to avoid overlap)
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(12.dp)
         ) {
-            // Top Left Compact Status Bar
-            Surface(
-                modifier = Modifier.align(Alignment.TopStart),
-                shape = RoundedCornerShape(14.dp),
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
-                shadowElevation = 4.dp
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+            // Top Left Compact Status Bar (shown in Admin overview)
+            if (showTopStatusPill) {
+                Surface(
+                    modifier = Modifier.align(Alignment.TopStart),
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+                    shadowElevation = 4.dp
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(10.dp)
-                            .background(
-                                color = if (currentPoint?.isMock == true) StatusRed
-                                else if (isLiveTracking) StatusGreen
-                                else StatusYellow,
-                                shape = CircleShape
-                            )
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Column {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = if (currentPoint?.isMock == true) "⚠️ Fake GPS"
-                                else if (isLiveTracking) "Live Tracking" else "Standby",
-                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                color = if (currentPoint?.isMock == true) StatusRed else MaterialTheme.colorScheme.onSurface
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "• ${vehicleType.iconEmoji} ${vehicleType.label}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = GeoBluePrimary,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                        if (currentPoint != null) {
-                            Text(
-                                text = "${currentPoint.speedKmh.toInt()} km/h • ±${currentPoint.accuracyMeters.toInt()}m" +
-                                        if (detectedStops.isNotEmpty()) " • 🛑 ${detectedStops.size} Stop" else "",
-                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .background(
+                                    color = if (currentPoint?.isMock == true) StatusRed
+                                    else if (isLiveTracking) StatusGreen
+                                    else StatusYellow,
+                                    shape = CircleShape
+                                )
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = if (currentPoint?.isMock == true) "⚠️ Fake GPS"
+                                    else if (isLiveTracking) "Live Tracking" else "Standby",
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = if (currentPoint?.isMock == true) StatusRed else MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "• ${vehicleType.iconEmoji} ${vehicleType.label}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = GeoBluePrimary,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                            if (currentPoint != null) {
+                                Text(
+                                    text = "${currentPoint.speedKmh.toInt()} km/h • ±${currentPoint.accuracyMeters.toInt()}m" +
+                                            if (detectedStops.isNotEmpty()) " • 🛑 ${detectedStops.size} Stop" else "",
+                                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
                 }
             }
 
-            // Top Right Recenter Button
+            // Recenter Button
             FloatingActionButton(
                 onClick = {
                     currentPoint?.let {
@@ -293,7 +335,8 @@ fun OpenStreetMapTrackerView(
                     onMapCenterRequested()
                 },
                 modifier = Modifier
-                    .align(Alignment.TopEnd)
+                    .align(if (showTopStatusPill) Alignment.TopEnd else Alignment.BottomEnd)
+                    .padding(bottom = if (showTopStatusPill) 0.dp else 90.dp)
                     .size(46.dp)
                     .testTag("btn_osm_recenter"),
                 shape = CircleShape,

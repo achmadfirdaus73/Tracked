@@ -33,6 +33,7 @@ class LocationEngine(
         LocationServices.getFusedLocationProviderClient(context)
 
     private var realGpsCallback: LocationCallback? = null
+    private var currentSessionId: String = ""
 
     // Track previous inside/outside state of geofences to detect enter/exit events
     private val previousGeofenceState = mutableMapOf<String, Boolean>()
@@ -41,11 +42,13 @@ class LocationEngine(
     @SuppressLint("MissingPermission")
     fun startTracking(
         user: UserProfile,
+        sessionId: String = "",
         onPointRecorded: (LocationPoint) -> Unit = {},
         onAlertTriggered: (GeofenceAlert) -> Unit = {}
     ) {
         stopTracking()
         hasReportedMockLocation = false
+        currentSessionId = if (sessionId.isNotBlank()) sessionId else java.util.UUID.randomUUID().toString()
         startRealGpsTracking(user, onPointRecorded, onAlertTriggered)
     }
 
@@ -54,6 +57,7 @@ class LocationEngine(
             fusedClient.removeLocationUpdates(callback)
         }
         realGpsCallback = null
+        currentSessionId = ""
     }
 
     @SuppressLint("MissingPermission")
@@ -224,6 +228,7 @@ class LocationEngine(
             val pt = LocationPoint(
                 userId = user.userId,
                 companyId = user.companyId,
+                sessionId = currentSessionId,
                 latitude = effectiveLat,
                 longitude = effectiveLng,
                 altitude = alt,

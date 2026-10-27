@@ -252,8 +252,10 @@ class MainViewModel(private val application: Application) : ViewModel() {
         viewModelScope.launch {
             repository.setLocationSharing(userSession.user.userId, enabled)
             if (enabled) {
+                val newSessionId = UUID.randomUUID().toString()
                 locationEngine.startTracking(
                     user = userSession.user,
+                    sessionId = newSessionId,
                     onPointRecorded = { pt ->
                         _currentPoint.value = pt
                     },

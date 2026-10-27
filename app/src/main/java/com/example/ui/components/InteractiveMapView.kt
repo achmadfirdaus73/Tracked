@@ -44,6 +44,7 @@ import androidx.compose.runtime.setValue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.example.util.RoadNetworkEngine
+import com.example.util.RouteSegmenter
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
@@ -82,30 +83,62 @@ fun InteractiveMapView(
     userLabel: String = "User",
     vehicleType: com.example.data.model.VehicleType = com.example.data.model.VehicleType.MOTORCYCLE,
     isLiveTracking: Boolean = true,
+    compassHeading: Float = 0f,
+    isUserMode: Boolean = false,
+    showTopStatusPill: Boolean = !isUserMode,
     highlightPointIndex: Int? = null,
     onMapCenterRequested: () -> Unit = {}
 ) {
-    var zoomLevel by remember { mutableFloatStateOf(16f) } // approx meters per 100 pixels
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var zoomLevel by remember { mutableFloatStateOf(if (isUserMode && isLiveTracking) 28f else 16f) }
     var panOffsetX by remember { mutableFloatStateOf(0f) }
     var panOffsetY by remember { mutableFloatStateOf(0f) }
     var isDarkMapStyle by remember { mutableStateOf(false) }
+
+    // Auto zoom-in when live tracking is active on the user side
+    LaunchedEffect(isLiveTracking, isUserMode) {
+        if (isUserMode && isLiveTracking) {
+            zoomLevel = 28f
+            panOffsetX = 0f
+            panOffsetY = 0f
+        }
+    }
+
+    // Vehicle Marker Drawable for live rendering
+    val vehicleMarkerDrawable = remember(vehicleType, isLiveTracking, currentPoint?.isMock) {
+        com.example.util.MapMarkerHelper.createVehicleMarkerDrawable(
+            context = context,
+            vehicleType = vehicleType,
+            isLive = isLiveTracking,
+            isMock = currentPoint?.isMock == true
+        )
+    }
 
     // Detect 5-10 minute Stop Points
     val detectedStops = remember(routePoints) {
         com.example.util.StopPointDetector.detectStopPoints(routePoints, minDurationMinutes = 5)
     }
 
-    var matchedCoords by remember { mutableStateOf<List<Pair<Double, Double>>>(emptyList()) }
+    val routeSegments = remember(routePoints) {
+        RouteSegmenter.segmentRoute(routePoints)
+    }
+    var matchedSegments by remember { mutableStateOf<List<List<Pair<Double, Double>>>>(emptyList()) }
 
-    // Map-Matching: Asynchronously stitch consecutive coordinates along actual road geometry
-    LaunchedEffect(routePoints) {
-        if (routePoints.size > 1) {
-            val coords = routePoints.map { Pair(it.latitude, it.longitude) }
-            matchedCoords = withContext(Dispatchers.IO) {
-                RoadNetworkEngine.matchRouteToRoadNetwork(coords)
+    // Map-Matching: Asynchronously stitch consecutive coordinates along actual road geometry per segment
+    LaunchedEffect(routeSegments) {
+        if (routeSegments.isNotEmpty()) {
+            matchedSegments = withContext(Dispatchers.IO) {
+                routeSegments.map { seg ->
+                    if (seg.size > 1) {
+                        val coords = seg.map { Pair(it.latitude, it.longitude) }
+                        RoadNetworkEngine.matchRouteToRoadNetwork(coords)
+                    } else {
+                        seg.map { Pair(it.latitude, it.longitude) }
+                    }
+                }
             }
         } else {
-            matchedCoords = routePoints.map { Pair(it.latitude, it.longitude) }
+            matchedSegments = emptyList()
         }
     }
 
@@ -234,84 +267,93 @@ fun InteractiveMapView(
                 }
             }
 
-            // 3. Draw Route Polyline with Speed-Coded Segments (Road Matched)
-            val effectiveRoute = if (matchedCoords.size > 1) matchedCoords else routePoints.map { Pair(it.latitude, it.longitude) }
-            if (effectiveRoute.size > 1) {
-                for (i in 0 until effectiveRoute.size - 1) {
-                    val p1 = effectiveRoute[i]
-                    val p2 = effectiveRoute[i + 1]
-                    val pt1Px = geoToPixel(p1.first, p1.second)
-                    val pt2Px = geoToPixel(p2.first, p2.second)
+            // 3. Draw Route Polylines per Segment (Road Matched, no teleport lines across sessions)
+            val displaySegments = if (matchedSegments.isNotEmpty()) {
+                matchedSegments
+            } else {
+                routeSegments.map { seg -> seg.map { Pair(it.latitude, it.longitude) } }
+            }
 
-                    // Polyline shadow
-                    drawLine(
-                        color = Color.Black.copy(alpha = 0.25f),
-                        start = Offset(pt1Px.x, pt1Px.y + 3f),
-                        end = Offset(pt2Px.x, pt2Px.y + 3f),
-                        strokeWidth = 9.dp.toPx(),
-                        cap = StrokeCap.Round
-                    )
-                    // Polyline core (Navigation vibrant line)
-                    drawLine(
-                        color = GeoCyanAccent,
-                        start = pt1Px,
-                        end = pt2Px,
-                        strokeWidth = 6.dp.toPx(),
-                        cap = StrokeCap.Round
-                    )
-                }
+            for ((segIdx, segCoords) in displaySegments.withIndex()) {
+                if (segCoords.size > 1) {
+                    for (i in 0 until segCoords.size - 1) {
+                        val p1 = segCoords[i]
+                        val p2 = segCoords[i + 1]
+                        val pt1Px = geoToPixel(p1.first, p1.second)
+                        val pt2Px = geoToPixel(p2.first, p2.second)
 
-                // Draw intermediate breadcrumb dots
-                for (i in effectiveRoute.indices step 4) {
-                    val ptPx = geoToPixel(effectiveRoute[i].first, effectiveRoute[i].second)
+                        // Polyline shadow
+                        drawLine(
+                            color = Color.Black.copy(alpha = 0.25f),
+                            start = Offset(pt1Px.x, pt1Px.y + 3f),
+                            end = Offset(pt2Px.x, pt2Px.y + 3f),
+                            strokeWidth = 9.dp.toPx(),
+                            cap = StrokeCap.Round
+                        )
+                        // Polyline core (Navigation vibrant line)
+                        drawLine(
+                            color = GeoCyanAccent,
+                            start = pt1Px,
+                            end = pt2Px,
+                            strokeWidth = 6.dp.toPx(),
+                            cap = StrokeCap.Round
+                        )
+                    }
+
+                    // Draw intermediate breadcrumb dots
+                    for (i in segCoords.indices step 4) {
+                        val ptPx = geoToPixel(segCoords[i].first, segCoords[i].second)
+                        drawCircle(
+                            color = Color.White,
+                            radius = 3.dp.toPx(),
+                            center = ptPx
+                        )
+                    }
+
+                    // Draw Start Point Marker for each segment
+                    val startGeo = segCoords.first()
+                    val startPx = geoToPixel(startGeo.first, startGeo.second)
+                    drawCircle(
+                        color = StatusGreen,
+                        radius = 12.dp.toPx(),
+                        center = startPx
+                    )
                     drawCircle(
                         color = Color.White,
-                        radius = 3.dp.toPx(),
-                        center = ptPx
+                        radius = 8.dp.toPx(),
+                        center = startPx
                     )
-                }
-
-                // Draw Start Point Marker (Distinct Emerald Green START Pin)
-                val startPx = geoToPixel(routePoints.first().latitude, routePoints.first().longitude)
-                drawCircle(
-                    color = StatusGreen,
-                    radius = 12.dp.toPx(),
-                    center = startPx
-                )
-                drawCircle(
-                    color = Color.White,
-                    radius = 8.dp.toPx(),
-                    center = startPx
-                )
-                drawCircle(
-                    color = StatusGreen,
-                    radius = 5.dp.toPx(),
-                    center = startPx
-                )
-
-                drawContext.canvas.nativeCanvas.apply {
-                    val paint = android.graphics.Paint().apply {
-                        color = android.graphics.Color.WHITE
-                        textSize = 26f
-                        isFakeBoldText = true
-                        textAlign = android.graphics.Paint.Align.CENTER
-                    }
-                    val bgPaint = android.graphics.Paint().apply {
-                        color = android.graphics.Color.parseColor("#059669")
-                        style = android.graphics.Paint.Style.FILL
-                    }
-                    val text = "🏁 START"
-                    val bounds = android.graphics.Rect()
-                    paint.getTextBounds(text, 0, text.length, bounds)
-                    val bgRect = android.graphics.RectF(
-                        startPx.x - bounds.width() / 2f - 16f,
-                        startPx.y - 20.dp.toPx() - 28f,
-                        startPx.x + bounds.width() / 2f + 16f,
-                        startPx.y - 20.dp.toPx() + 10f
+                    drawCircle(
+                        color = StatusGreen,
+                        radius = 5.dp.toPx(),
+                        center = startPx
                     )
-                    drawRoundRect(bgRect, 12f, 12f, bgPaint)
-                    drawText(text, startPx.x, startPx.y - 20.dp.toPx() - 4f, paint)
+
+                    drawContext.canvas.nativeCanvas.apply {
+                        val paint = android.graphics.Paint().apply {
+                            color = android.graphics.Color.WHITE
+                            textSize = 26f
+                            isFakeBoldText = true
+                            textAlign = android.graphics.Paint.Align.CENTER
+                        }
+                        val bgPaint = android.graphics.Paint().apply {
+                            color = android.graphics.Color.parseColor("#059669")
+                            style = android.graphics.Paint.Style.FILL
+                        }
+                        val text = if (segIdx == 0) "🏁 START" else "🏁 TRIP ${segIdx + 1}"
+                        val bounds = android.graphics.Rect()
+                        paint.getTextBounds(text, 0, text.length, bounds)
+                        val bgRect = android.graphics.RectF(
+                            startPx.x - bounds.width() / 2f - 16f,
+                            startPx.y - 20.dp.toPx() - 28f,
+                            startPx.x + bounds.width() / 2f + 16f,
+                            startPx.y - 20.dp.toPx() + 10f
+                        )
+                        drawRoundRect(bgRect, 12f, 12f, bgPaint)
+                        drawText(text, startPx.x, startPx.y - 20.dp.toPx() - 4f, paint)
+                    }
                 }
+            }
 
                 // Draw Stop Points (5-10+ minutes stops)
                 for (stop in detectedStops) {
@@ -356,7 +398,6 @@ fun InteractiveMapView(
                         drawText(text, stopPx.x, stopPx.y - 18.dp.toPx() - 4f, paint)
                     }
                 }
-            }
 
             // 4. Highlighted scrubber point (if scrubbing history timeline)
             if (highlightPointIndex != null && highlightPointIndex in routePoints.indices) {
@@ -408,52 +449,25 @@ fun InteractiveMapView(
                     )
                 }
 
-                // Main Marker Disc
-                drawCircle(
-                    color = GeoBluePrimary,
-                    radius = 14.dp.toPx(),
-                    center = userPx
-                )
-                drawCircle(
-                    color = Color.White,
-                    radius = 11.dp.toPx(),
-                    center = userPx
-                )
-                drawCircle(
-                    color = if (isLiveTracking) GeoCyanAccent else StatusYellow,
-                    radius = 8.dp.toPx(),
-                    center = userPx
-                )
+                // Main Vehicle Marker with dynamic Compass Heading Rotation
+                val effectiveHeading = if (compassHeading > 0f) compassHeading else currentPoint.bearing
 
-                // Heading / Bearing Pointer
-                val bearingRad = Math.toRadians((currentPoint.bearing - 90.0))
-                val arrowLen = 22.dp.toPx()
-                val arrowTip = Offset(
-                    (userPx.x + arrowLen * cos(bearingRad)).toFloat(),
-                    (userPx.y + arrowLen * sin(bearingRad)).toFloat()
-                )
-                val arrowLeft = Offset(
-                    (userPx.x + (arrowLen * 0.5f) * cos(bearingRad + 2.5)).toFloat(),
-                    (userPx.y + (arrowLen * 0.5f) * sin(bearingRad + 2.5)).toFloat()
-                )
-                val arrowRight = Offset(
-                    (userPx.x + (arrowLen * 0.5f) * cos(bearingRad - 2.5)).toFloat(),
-                    (userPx.y + (arrowLen * 0.5f) * sin(bearingRad - 2.5)).toFloat()
-                )
-
-                val arrowPath = Path().apply {
-                    moveTo(arrowTip.x, arrowTip.y)
-                    lineTo(arrowLeft.x, arrowLeft.y)
-                    lineTo(arrowRight.x, arrowRight.y)
-                    close()
+                drawContext.canvas.nativeCanvas.apply {
+                    save()
+                    translate(userPx.x, userPx.y)
+                    rotate(effectiveHeading)
+                    val bmp = (vehicleMarkerDrawable as? android.graphics.drawable.BitmapDrawable)?.bitmap
+                    if (bmp != null) {
+                        drawBitmap(bmp, -bmp.width / 2f, -bmp.height / 2f, null)
+                    }
+                    restore()
                 }
-                drawPath(path = arrowPath, color = GeoBluePrimary)
 
                 // Live User Name + Speed Badge
                 drawContext.canvas.nativeCanvas.apply {
                     val paint = android.graphics.Paint().apply {
                         color = android.graphics.Color.WHITE
-                        textSize = 32f
+                        textSize = 30f
                         isFakeBoldText = true
                         textAlign = android.graphics.Paint.Align.CENTER
                     }
@@ -466,13 +480,13 @@ fun InteractiveMapView(
                     val bounds = android.graphics.Rect()
                     paint.getTextBounds(label, 0, label.length, bounds)
                     val bgRect = android.graphics.RectF(
-                        userPx.x - bounds.width() / 2f - 24f,
-                        userPx.y - 48.dp.toPx() - 36f,
-                        userPx.x + bounds.width() / 2f + 24f,
-                        userPx.y - 48.dp.toPx() + 18f
+                        userPx.x - bounds.width() / 2f - 20f,
+                        userPx.y + 42.dp.toPx() - 4f,
+                        userPx.x + bounds.width() / 2f + 20f,
+                        userPx.y + 42.dp.toPx() + 38f
                     )
-                    drawRoundRect(bgRect, 20f, 20f, bgPaint)
-                    drawText(label, userPx.x, userPx.y - 48.dp.toPx(), paint)
+                    drawRoundRect(bgRect, 16f, 16f, bgPaint)
+                    drawText(label, userPx.x, userPx.y + 42.dp.toPx() + 25f, paint)
                 }
             }
         }
@@ -482,6 +496,7 @@ fun InteractiveMapView(
             currentPoint = currentPoint,
             isLiveTracking = isLiveTracking,
             isDarkMapStyle = isDarkMapStyle,
+            showTopStatusPill = showTopStatusPill,
             onToggleMapStyle = { isDarkMapStyle = !isDarkMapStyle },
             onZoomIn = { zoomLevel = (zoomLevel * 1.35f).coerceAtMost(48f) },
             onZoomOut = { zoomLevel = (zoomLevel / 1.35f).coerceAtLeast(4f) },
@@ -555,6 +570,7 @@ private fun MapControlsOverlay(
     currentPoint: LocationPoint?,
     isLiveTracking: Boolean,
     isDarkMapStyle: Boolean,
+    showTopStatusPill: Boolean = true,
     onToggleMapStyle: () -> Unit,
     onZoomIn: () -> Unit,
     onZoomOut: () -> Unit,
@@ -562,54 +578,58 @@ private fun MapControlsOverlay(
     modifier: Modifier = Modifier
 ) {
     Box(modifier = modifier.padding(16.dp)) {
-        // Top Left Status Badge & GPS Telemetry Pill
-        Surface(
-            modifier = Modifier.align(Alignment.TopStart),
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
-            shadowElevation = 6.dp
-        ) {
-            Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(10.dp)
-                            .background(
-                                color = if (isLiveTracking) StatusGreen else StatusYellow,
-                                shape = CircleShape
-                            )
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = if (isLiveTracking) "GPS Real-Time Aktif" else "Pelacakan Ditunda",
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
+        // Top Left Status Badge & GPS Telemetry Pill (Only if showTopStatusPill is true)
+        if (showTopStatusPill) {
+            Surface(
+                modifier = Modifier.align(Alignment.TopStart),
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+                shadowElevation = 6.dp
+            ) {
+                Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .background(
+                                    color = if (isLiveTracking) StatusGreen else StatusYellow,
+                                    shape = CircleShape
+                                )
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (isLiveTracking) "GPS Real-Time Aktif" else "Pelacakan Ditunda",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
 
-                if (currentPoint != null) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = String.format(
-                            "Lat: %.5f, Lng: %.5f",
-                            currentPoint.latitude,
-                            currentPoint.longitude
-                        ),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "Akurasi: ±${currentPoint.accuracyMeters.toInt()}m • ${currentPoint.geofenceStatus}",
-                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
-                        color = GeoBluePrimary
-                    )
+                    if (currentPoint != null) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = String.format(
+                                "Lat: %.5f, Lng: %.5f",
+                                currentPoint.latitude,
+                                currentPoint.longitude
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "Akurasi: ±${currentPoint.accuracyMeters.toInt()}m • ${currentPoint.geofenceStatus}",
+                            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
+                            color = GeoBluePrimary
+                        )
+                    }
                 }
             }
         }
 
-        // Top Right Controls (Layer toggle & Recenter)
+        // Controls (Layer toggle & Recenter)
         Column(
-            modifier = Modifier.align(Alignment.TopEnd),
+            modifier = Modifier
+                .align(if (showTopStatusPill) Alignment.TopEnd else Alignment.BottomEnd)
+                .padding(bottom = if (showTopStatusPill) 0.dp else 90.dp),
             horizontalAlignment = Alignment.End
         ) {
             FloatingActionButton(
