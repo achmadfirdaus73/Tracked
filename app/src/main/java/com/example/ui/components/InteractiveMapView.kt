@@ -109,9 +109,9 @@ fun InteractiveMapView(
         }
     }
 
-    // Reference center anchor coordinate (Jakarta default or current user coordinate)
-    val centerLat = currentPoint?.latitude ?: -6.2088
-    val centerLng = currentPoint?.longitude ?: 106.8456
+    // Reference center anchor coordinate
+    val centerLat = currentPoint?.latitude ?: routePoints.lastOrNull()?.latitude ?: -6.2088
+    val centerLng = currentPoint?.longitude ?: routePoints.lastOrNull()?.longitude ?: 106.8456
 
     // Animate radar sweep & GPS pulse
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")

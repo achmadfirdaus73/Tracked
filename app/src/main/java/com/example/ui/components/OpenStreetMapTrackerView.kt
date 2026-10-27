@@ -43,6 +43,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.example.data.model.GeofenceZone
 import com.example.data.model.LocationPoint
@@ -89,8 +90,8 @@ fun OpenStreetMapTrackerView(
             setMultiTouchControls(true)
             zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
             controller.setZoom(16.5)
-            val initialLat = currentPoint?.latitude ?: -6.2088
-            val initialLng = currentPoint?.longitude ?: 106.8456
+            val initialLat = currentPoint?.latitude ?: routePoints.lastOrNull()?.latitude ?: -6.2088
+            val initialLng = currentPoint?.longitude ?: routePoints.lastOrNull()?.longitude ?: 106.8456
             controller.setCenter(GeoPoint(initialLat, initialLng))
         }
     }
@@ -156,18 +157,18 @@ fun OpenStreetMapTrackerView(
                     // Outer road casing outline
                     val casingPolyline = Polyline(map).apply {
                         setPoints(displayPoints)
-                        outlinePaint.color = android.graphics.Color.parseColor("#0C2340")
-                        outlinePaint.strokeWidth = 14f
+                        outlinePaint.color = android.graphics.Color.parseColor("#0C2340") // Deep Navy casing
+                        outlinePaint.strokeWidth = 13f
                         outlinePaint.strokeCap = Paint.Cap.ROUND
                         outlinePaint.strokeJoin = Paint.Join.ROUND
                     }
                     map.overlays.add(casingPolyline)
 
-                    // Core road-following navigation line
+                    // Core road-following navigation line (Enterprise Cyan-Blue)
                     val polyline = Polyline(map).apply {
                         setPoints(displayPoints)
-                        outlinePaint.color = android.graphics.Color.parseColor("#00AA13")
-                        outlinePaint.strokeWidth = 10f
+                        outlinePaint.color = android.graphics.Color.parseColor("#0284C7") // Sky/Cyan Blue
+                        outlinePaint.strokeWidth = 9f
                         outlinePaint.strokeCap = Paint.Cap.ROUND
                         outlinePaint.strokeJoin = Paint.Join.ROUND
                     }
@@ -227,72 +228,58 @@ fun OpenStreetMapTrackerView(
                 .testTag("osm_map_view")
         )
 
-        // Floating HUD for OSM Map
+        // Floating Modern Telematics HUD for OSM Map
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp)
+                .padding(12.dp)
         ) {
-            // Top Left Status Pill
+            // Top Left Compact Status Bar
             Surface(
                 modifier = Modifier.align(Alignment.TopStart),
-                shape = RoundedCornerShape(18.dp),
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
-                shadowElevation = 6.dp
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+                shadowElevation = 4.dp
             ) {
-                Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(10.dp)
-                                .background(
-                                    color = if (currentPoint?.isMock == true) StatusRed
-                                    else if (isLiveTracking) StatusGreen
-                                    else StatusYellow,
-                                    shape = CircleShape
-                                )
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = if (currentPoint?.isMock == true) "⚠️ Terdeteksi Fake GPS"
-                            else "OpenStreetMap: Live Tracking",
-                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                            color = if (currentPoint?.isMock == true) StatusRed else MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-
-                    if (currentPoint != null) {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = String.format("Lat: %.5f, Lng: %.5f", currentPoint.latitude, currentPoint.longitude),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = "Akurasi: ±${currentPoint.accuracyMeters.toInt()}m • ${currentPoint.geofenceStatus}",
-                            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
-                            color = GeoBluePrimary
-                        )
-                        Spacer(modifier = Modifier.height(3.dp))
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .background(
+                                color = if (currentPoint?.isMock == true) StatusRed
+                                else if (isLiveTracking) StatusGreen
+                                else StatusYellow,
+                                shape = CircleShape
+                            )
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                text = "${vehicleType.iconEmoji} ${vehicleType.label}",
-                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
-                                color = GeoBluePrimary
+                                text = if (currentPoint?.isMock == true) "⚠️ Fake GPS"
+                                else if (isLiveTracking) "Live Tracking" else "Standby",
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                color = if (currentPoint?.isMock == true) StatusRed else MaterialTheme.colorScheme.onSurface
                             )
-                            if (detectedStops.isNotEmpty()) {
-                                Text(
-                                    text = " • 🛑 ${detectedStops.size} Titik Berhenti",
-                                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
-                                    color = StatusRed
-                                )
-                            }
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "• ${vehicleType.iconEmoji} ${vehicleType.label}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = GeoBluePrimary,
+                                fontWeight = FontWeight.SemiBold
+                            )
                         }
-                        Text(
-                            text = if (isRoadMatched) "🛣️ Map-Matching: Terhubung ke Jalur Jalan" else "🛣️ Road-Snapping: Aktif",
-                            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
-                            color = StatusGreen
-                        )
+                        if (currentPoint != null) {
+                            Text(
+                                text = "${currentPoint.speedKmh.toInt()} km/h • ±${currentPoint.accuracyMeters.toInt()}m" +
+                                        if (detectedStops.isNotEmpty()) " • 🛑 ${detectedStops.size} Stop" else "",
+                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }

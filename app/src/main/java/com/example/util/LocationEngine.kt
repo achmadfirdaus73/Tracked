@@ -98,6 +98,9 @@ class LocationEngine(
         }
     }
 
+    private var lastRecordedLat: Double? = null
+    private var lastRecordedLng: Double? = null
+
     private fun processNewCoordinate(
         user: UserProfile,
         lat: Double,
@@ -112,15 +115,40 @@ class LocationEngine(
         onAlertTriggered: (GeofenceAlert) -> Unit
     ) {
         scope.launch(Dispatchers.IO) {
-            // Automatic road snapping: snap noisy GPS coordinate onto nearest street center line
-            val snapped = RoadNetworkEngine.snapToRoad(lat, lng)
-            val effectiveLat = if (snapped.distanceMeters <= 60.0) snapped.latitude else lat
-            val effectiveLng = if (snapped.distanceMeters <= 60.0) snapped.longitude else lng
+            // Apply GPS jitter smoothing if accuracy is coarse (> 25m)
+            val prevLat = lastRecordedLat
+            val prevLng = lastRecordedLng
+            val smoothedLat = if (prevLat != null && accuracyM > 25f) {
+                0.65 * lat + 0.35 * prevLat
+            } else {
+                lat
+            }
+            val smoothedLng = if (prevLng != null && accuracyM > 25f) {
+                0.65 * lng + 0.35 * prevLng
+            } else {
+                lng
+            }
+
+            // Automatic road snapping: strictly within 20m of road center-line
+            val snapped = RoadNetworkEngine.snapToRoad(smoothedLat, smoothedLng)
+            val effectiveLat = if (snapped.distanceMeters in 0.001..20.0 && snapped.roadName.isNotBlank()) {
+                snapped.latitude
+            } else {
+                smoothedLat
+            }
+            val effectiveLng = if (snapped.distanceMeters in 0.001..20.0 && snapped.roadName.isNotBlank()) {
+                snapped.longitude
+            } else {
+                smoothedLng
+            }
+
+            lastRecordedLat = effectiveLat
+            lastRecordedLng = effectiveLng
 
             val geofences = repository.getGeofences(user.companyId)
             val (activeFences, rawStatusDesc) = GeofenceEngine.evaluateGeofences(effectiveLat, effectiveLng, geofences)
 
-            val roadInfo = if (snapped.roadName.isNotBlank() && snapped.roadName != "Area Terbuka") {
+            val roadInfo = if (snapped.roadName.isNotBlank() && snapped.distanceMeters <= 20.0) {
                 "🛣️ ${snapped.roadName}"
             } else {
                 null

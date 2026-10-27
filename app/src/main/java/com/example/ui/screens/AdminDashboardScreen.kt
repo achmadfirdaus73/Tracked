@@ -56,6 +56,8 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
@@ -253,47 +255,81 @@ fun AdminDashboardScreen(
                     // TAB 0: FLEET MONITORING MAP
                     Column(modifier = Modifier.fillMaxSize()) {
                         // User / Field Driver Selector Strip
+                        // Fleet Quick KPI & Driver Selector Strip
                         Surface(
-                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            LazyRow(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                items(users) { usr ->
-                                    val isSel = (usr.userId == activeSelectedUser?.userId)
-                                    FilterChip(
-                                        selected = isSel,
-                                        onClick = { viewModel.selectUser(usr.userId) },
-                                        label = {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(8.dp)
-                                                        .background(
-                                                            if (usr.hasFakeGpsAlert) StatusRed
-                                                            else if (usr.isSharingLocation) StatusGreen
-                                                            else Color.Gray,
-                                                            CircleShape
-                                                        )
-                                                )
-                                                Spacer(modifier = Modifier.width(6.dp))
-                                                Text(
-                                                    text = if (usr.hasFakeGpsAlert) "⚠️ ${usr.fullName} (FAKE GPS)" else "${usr.fullName} (${usr.unitCode})",
-                                                    fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
-                                                    color = if (usr.hasFakeGpsAlert && !isSel) StatusRed else Color.Unspecified
-                                                )
-                                            }
-                                        },
-                                        colors = FilterChipDefaults.filterChipColors(
-                                            selectedContainerColor = if (usr.hasFakeGpsAlert) StatusRed else GeoBluePrimary,
-                                            selectedLabelColor = Color.White
-                                        ),
-                                        modifier = Modifier.testTag("chip_user_${usr.userId}")
+                            Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                                // Top mini stats
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 14.dp, vertical = 2.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "STATUS ARMADA",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
+                                    val onlineCount = users.count { it.isSharingLocation }
+                                    Text(
+                                        text = "🟢 $onlineCount Online  •  ⚪ ${users.size - onlineCount} Standby",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+
+                                LazyRow(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    items(users) { usr ->
+                                        val isSel = (usr.userId == activeSelectedUser?.userId)
+                                        FilterChip(
+                                            selected = isSel,
+                                            onClick = { viewModel.selectUser(usr.userId) },
+                                            label = {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Text(usr.vehicleType.iconEmoji, fontSize = 14.sp)
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(7.dp)
+                                                            .background(
+                                                                if (usr.hasFakeGpsAlert) StatusRed
+                                                                else if (usr.isSharingLocation) StatusGreen
+                                                                else Color.Gray,
+                                                                CircleShape
+                                                            )
+                                                    )
+                                                    Spacer(modifier = Modifier.width(5.dp))
+                                                    Text(
+                                                        text = if (usr.hasFakeGpsAlert) "⚠️ ${usr.fullName}" else usr.fullName,
+                                                        fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
+                                                        fontSize = 12.sp
+                                                    )
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text(
+                                                        text = "${usr.batteryLevel}%",
+                                                        fontSize = 10.sp,
+                                                        color = if (isSel) Color.White.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                            },
+                                            colors = FilterChipDefaults.filterChipColors(
+                                                selectedContainerColor = if (usr.hasFakeGpsAlert) StatusRed else GeoBluePrimary,
+                                                selectedLabelColor = Color.White
+                                            ),
+                                            modifier = Modifier.testTag("chip_user_${usr.userId}")
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -316,70 +352,101 @@ fun AdminDashboardScreen(
                                     modifier = Modifier
                                         .align(Alignment.BottomCenter)
                                         .fillMaxWidth()
-                                        .padding(12.dp),
-                                    shape = RoundedCornerShape(16.dp),
-                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                                    elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    shape = RoundedCornerShape(18.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f)),
+                                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
                                 ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 14.dp, vertical = 10.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(38.dp)
-                                                    .background(GeoBluePrimary.copy(alpha = 0.12f), CircleShape),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Text(selectedEmp.vehicleType.iconEmoji, fontSize = 20.sp)
-                                            }
-                                            Spacer(modifier = Modifier.width(10.dp))
-                                            Column {
-                                                Text(
-                                                    text = selectedEmp.fullName,
-                                                    style = MaterialTheme.typography.titleSmall,
-                                                    fontWeight = FontWeight.Bold
-                                                )
-                                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                                    val batColor = when {
-                                                        selectedEmp.isCharging -> StatusGreen
-                                                        selectedEmp.batteryLevel <= 20 -> StatusRed
-                                                        selectedEmp.batteryLevel <= 50 -> StatusYellow
-                                                        else -> StatusGreen
+                                    Column(modifier = Modifier.padding(12.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                // Vehicle Pin Avatar (Tapping allows changing the vehicle type)
+                                                Surface(
+                                                    modifier = Modifier
+                                                        .size(42.dp)
+                                                        .clickable { userToEditVehicle = selectedEmp },
+                                                    shape = RoundedCornerShape(12.dp),
+                                                    color = GeoBluePrimary.copy(alpha = 0.12f)
+                                                ) {
+                                                    Box(contentAlignment = Alignment.Center) {
+                                                        Text(selectedEmp.vehicleType.iconEmoji, fontSize = 22.sp)
                                                     }
-                                                    Icon(
-                                                        imageVector = if (selectedEmp.isCharging) Icons.Default.BatteryChargingFull else Icons.Default.BatteryFull,
-                                                        contentDescription = null,
-                                                        tint = batColor,
-                                                        modifier = Modifier.size(14.dp)
-                                                    )
-                                                    Spacer(modifier = Modifier.width(3.dp))
-                                                    Text(
-                                                        text = "Baterai HP: ${selectedEmp.batteryLevel}%${if (selectedEmp.isCharging) " ⚡" else ""} • ${selectedEmp.unitCode}",
-                                                        style = MaterialTheme.typography.bodySmall,
-                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                    )
+                                                }
+                                                Spacer(modifier = Modifier.width(10.dp))
+                                                Column {
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        Text(
+                                                            text = selectedEmp.fullName,
+                                                            style = MaterialTheme.typography.titleSmall,
+                                                            fontWeight = FontWeight.Bold
+                                                        )
+                                                        Spacer(modifier = Modifier.width(6.dp))
+                                                        Surface(
+                                                            shape = RoundedCornerShape(4.dp),
+                                                            color = if (selectedEmp.isSharingLocation) StatusGreen.copy(alpha = 0.15f) else Color.Gray.copy(alpha = 0.15f)
+                                                        ) {
+                                                            Text(
+                                                                text = if (selectedEmp.isSharingLocation) "ONLINE" else "OFFLINE",
+                                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                                                                fontWeight = FontWeight.ExtraBold,
+                                                                color = if (selectedEmp.isSharingLocation) StatusGreen else Color.Gray
+                                                            )
+                                                        }
+                                                    }
+
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        val batColor = when {
+                                                            selectedEmp.isCharging -> StatusGreen
+                                                            selectedEmp.batteryLevel <= 20 -> StatusRed
+                                                            selectedEmp.batteryLevel <= 50 -> StatusYellow
+                                                            else -> StatusGreen
+                                                        }
+                                                        Icon(
+                                                            imageVector = if (selectedEmp.isCharging) Icons.Default.BatteryChargingFull else Icons.Default.BatteryFull,
+                                                            contentDescription = null,
+                                                            tint = batColor,
+                                                            modifier = Modifier.size(13.dp)
+                                                        )
+                                                        Spacer(modifier = Modifier.width(3.dp))
+                                                        Text(
+                                                            text = "${selectedEmp.batteryLevel}%${if (selectedEmp.isCharging) " ⚡" else ""} • Unit ${selectedEmp.unitCode} • ${selectedEmp.vehicleType.label}",
+                                                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                        )
+                                                    }
                                                 }
                                             }
-                                        }
 
-                                        Button(
-                                            onClick = {
-                                                chatUser = selectedEmp
-                                                viewModel.openChatWithUser(selectedEmp.userId)
-                                            },
-                                            shape = RoundedCornerShape(10.dp),
-                                            colors = ButtonDefaults.buttonColors(containerColor = GeoBluePrimary),
-                                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                                            modifier = Modifier.testTag("btn_tab0_chat_driver")
-                                        ) {
-                                            Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(16.dp))
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text("Chat", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                            // Action Buttons: Change Vehicle Icon & Chat
+                                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                OutlinedButton(
+                                                    onClick = { userToEditVehicle = selectedEmp },
+                                                    shape = RoundedCornerShape(10.dp),
+                                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                                                ) {
+                                                    Text("Icon Pin", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                }
+
+                                                Button(
+                                                    onClick = {
+                                                        chatUser = selectedEmp
+                                                        viewModel.openChatWithUser(selectedEmp.userId)
+                                                    },
+                                                    shape = RoundedCornerShape(10.dp),
+                                                    colors = ButtonDefaults.buttonColors(containerColor = GeoBluePrimary),
+                                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                                    modifier = Modifier.testTag("btn_tab0_chat_driver")
+                                                ) {
+                                                    Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(15.dp))
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text("Chat", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                }
+                                            }
                                         }
                                     }
                                 }

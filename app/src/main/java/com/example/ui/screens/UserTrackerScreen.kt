@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,10 +30,13 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.GpsOff
+import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.PinDrop
+import androidx.compose.material.icons.filled.Route
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Speed
-import androidx.compose.material.icons.filled.Terrain
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -51,6 +55,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -64,10 +69,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.runtime.LaunchedEffect
-import kotlinx.coroutines.delay
+import com.example.data.model.LocationPoint
 import com.example.data.model.UserProfile
-import com.example.util.BatteryHelper
 import com.example.ui.components.AdminUserChatSheet
 import com.example.ui.components.AppMapContainer
 import com.example.ui.theme.GeoBluePrimary
@@ -75,7 +78,11 @@ import com.example.ui.theme.GeoCyanAccent
 import com.example.ui.theme.StatusGreen
 import com.example.ui.theme.StatusRed
 import com.example.ui.theme.StatusYellow
+import com.example.util.BatteryHelper
+import com.example.util.RoadNetworkEngine
+import com.example.util.StopPointDetector
 import com.example.viewmodel.MainViewModel
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -98,30 +105,84 @@ fun UserTrackerScreen(
     LaunchedEffect(Unit) {
         while (true) {
             realBattery = BatteryHelper.getBatteryStatus(context)
-            delay(4000L)
+            delay(3500L)
         }
     }
 
     val isFakeGpsDetected = currentPt?.isMock == true
 
+    // Compute live telemetry metrics
+    val totalDistanceKm = remember(historyPoints) {
+        var meters = 0.0
+        for (i in 0 until historyPoints.size - 1) {
+            meters += RoadNetworkEngine.calculateDistanceMeters(
+                historyPoints[i].latitude, historyPoints[i].longitude,
+                historyPoints[i + 1].latitude, historyPoints[i + 1].longitude
+            )
+        }
+        meters / 1000.0
+    }
+
+    val detectedStops = remember(historyPoints) {
+        StopPointDetector.detectStopPoints(historyPoints, minDurationMinutes = 5)
+    }
+
+    val tripMinutes = remember(historyPoints) {
+        if (historyPoints.size >= 2) {
+            val startMs = historyPoints.first().timestamp
+            val lastMs = historyPoints.last().timestamp
+            ((lastMs - startMs) / 60000L).coerceAtLeast(0)
+        } else {
+            0L
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
-                        Text(
-                            text = "${user.fullName} ${user.vehicleType.iconEmoji}",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "${user.companyId} • ${user.unitCode} (${user.vehicleType.label})",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(
+                            shape = CircleShape,
+                            color = GeoBluePrimary.copy(alpha = 0.12f),
+                            modifier = Modifier.size(38.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(user.vehicleType.iconEmoji, fontSize = 20.sp)
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = user.fullName,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = if (isSharing) StatusGreen.copy(alpha = 0.15f) else Color.Gray.copy(alpha = 0.15f)
+                                ) {
+                                    Text(
+                                        text = if (isSharing) "ONLINE" else "STANDBY",
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = if (isSharing) StatusGreen else Color.Gray
+                                    )
+                                }
+                            }
+                            Text(
+                                text = "${user.companyId} • Unit ${user.unitCode} (${user.vehicleType.label})",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 },
                 actions = {
+                    // Chat Admin Direct Button
                     IconButton(
                         onClick = {
                             viewModel.openChatWithUser(user.userId)
@@ -129,11 +190,20 @@ fun UserTrackerScreen(
                         },
                         modifier = Modifier.testTag("btn_topbar_chat_admin")
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Chat,
-                            contentDescription = "Chat Admin",
-                            tint = GeoBluePrimary
-                        )
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = GeoBluePrimary.copy(alpha = 0.12f),
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Chat,
+                                    contentDescription = "Chat Admin",
+                                    tint = GeoBluePrimary,
+                                    modifier = Modifier.size(19.dp)
+                                )
+                            }
+                        }
                     }
                     IconButton(
                         onClick = { viewModel.logout() },
@@ -154,7 +224,7 @@ fun UserTrackerScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // 1. Critical Fake GPS Warning Banner (if detected)
+            // 1. Critical Fake GPS Warning Banner
             AnimatedVisibility(
                 visible = isFakeGpsDetected,
                 enter = fadeIn(),
@@ -177,18 +247,18 @@ fun UserTrackerScreen(
                             imageVector = Icons.Default.Warning,
                             contentDescription = null,
                             tint = Color.White,
-                            modifier = Modifier.size(26.dp)
+                            modifier = Modifier.size(24.dp)
                         )
                         Spacer(modifier = Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "⚠️ PERINGATAN: TERDETEKSI FAKE GPS!",
+                                text = "⚠️ PERINGATAN: MOCK LOCATION / FAKE GPS AKTIF",
                                 fontWeight = FontWeight.ExtraBold,
-                                fontSize = 13.sp,
+                                fontSize = 12.sp,
                                 color = Color.White
                             )
                             Text(
-                                text = "Sistem mendeteksi aplikasi manipulasi lokasi. Matikan Fake GPS/Mock Location di Opsi Pengembang untuk membagikan lokasi sah.",
+                                text = "Matikan aplikasi Fake GPS di Opsi Pengembang untuk merekam rute sah.",
                                 fontSize = 11.sp,
                                 color = Color.White.copy(alpha = 0.95f)
                             )
@@ -197,7 +267,7 @@ fun UserTrackerScreen(
                 }
             }
 
-            // 2. Standard Geofence Activity Banner (if any)
+            // 2. Geofence Activity Banner (if any)
             AnimatedVisibility(
                 visible = alertBanner != null && !isFakeGpsDetected,
                 enter = fadeIn(),
@@ -211,48 +281,48 @@ fun UserTrackerScreen(
                             .testTag("geofence_alert_banner"),
                         shape = RoundedCornerShape(12.dp),
                         color = if (alert.eventType == "MASUK") StatusGreen else StatusYellow,
-                        shadowElevation = 4.dp
+                        shadowElevation = 3.dp
                     ) {
                         Row(
-                            modifier = Modifier.padding(12.dp),
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Security,
                                 contentDescription = null,
                                 tint = Color.White,
-                                modifier = Modifier.size(22.dp)
+                                modifier = Modifier.size(20.dp)
                             )
                             Spacer(modifier = Modifier.width(10.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "Notifikasi Lokasi: ${alert.eventType} AREA",
+                                    text = "Notifikasi Area: ${alert.eventType}",
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp,
+                                    fontSize = 12.sp,
                                     color = Color.White
                                 )
                                 Text(
                                     text = alert.description,
-                                    fontSize = 12.sp,
+                                    fontSize = 11.sp,
                                     color = Color.White.copy(alpha = 0.95f)
                                 )
                             }
                             IconButton(
                                 onClick = { viewModel.dismissAlertBanner() },
-                                modifier = Modifier.size(28.dp)
+                                modifier = Modifier.size(24.dp)
                             ) {
-                                Icon(Icons.Default.Close, contentDescription = "Tutup", tint = Color.White)
+                                Icon(Icons.Default.Close, contentDescription = "Tutup", tint = Color.White, modifier = Modifier.size(16.dp))
                             }
                         }
                     }
                 }
             }
 
-            // 3. Google Maps SDK / Map View (Interactive Map Composable)
+            // 3. Map Container with Interactive HUD
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1.3f)
+                    .weight(1.35f)
             ) {
                 AppMapContainer(
                     currentPoint = currentPt,
@@ -263,29 +333,126 @@ fun UserTrackerScreen(
                     vehicleType = user.vehicleType,
                     modifier = Modifier.fillMaxSize()
                 )
+
+                // Top Floating Telematics HUD Strip
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 10.dp, start = 12.dp, end = 12.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+                    shadowElevation = 6.dp
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        // Speed Gauge
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Speed, contentDescription = null, tint = GeoBluePrimary, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Column {
+                                Text(
+                                    text = "${(currentPt?.speedKmh ?: 0f).toInt()} km/h",
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 13.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text("Kecepatan", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+
+                        Box(modifier = Modifier.width(1.dp).height(24.dp).background(MaterialTheme.colorScheme.outlineVariant))
+
+                        // Distance Odometer
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Route, contentDescription = null, tint = GeoCyanAccent, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Column {
+                                Text(
+                                    text = String.format("%.2f km", totalDistanceKm),
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 13.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text("Jarak", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+
+                        Box(modifier = Modifier.width(1.dp).height(24.dp).background(MaterialTheme.colorScheme.outlineVariant))
+
+                        // True Battery Status
+                        val batColor = when {
+                            realBattery.isCharging -> StatusGreen
+                            realBattery.percentage <= 20 -> StatusRed
+                            realBattery.percentage <= 50 -> StatusYellow
+                            else -> StatusGreen
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = if (realBattery.isCharging) Icons.Default.BatteryChargingFull else Icons.Default.BatteryFull,
+                                contentDescription = null,
+                                tint = batColor,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Column {
+                                Text(
+                                    text = "${realBattery.percentage}%${if (realBattery.isCharging) " ⚡" else ""}",
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 13.sp,
+                                    color = batColor
+                                )
+                                Text("Baterai", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+
+                        if (detectedStops.isNotEmpty()) {
+                            Box(modifier = Modifier.width(1.dp).height(24.dp).background(MaterialTheme.colorScheme.outlineVariant))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("🛑", fontSize = 14.sp)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Column {
+                                    Text(
+                                        text = "${detectedStops.size}",
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontSize = 13.sp,
+                                        color = StatusRed
+                                    )
+                                    Text("Berhenti", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
-            // 4. Lower Dashboard Controls Card
+            // 4. Modern Executive Telematics Control Panel
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1.1f),
-                shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+                    .weight(1.05f),
+                shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                elevation = CardDefaults.cardElevation(defaultElevation = 10.dp)
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(16.dp)
+                        .padding(horizontal = 16.dp, vertical = 14.dp)
                         .verticalScroll(rememberScrollState())
                 ) {
-                    // Share Location Master Switch
+                    // Location Sharing Transmission Master Bar
                     Surface(
-                        shape = RoundedCornerShape(16.dp),
+                        shape = RoundedCornerShape(14.dp),
                         color = if (isFakeGpsDetected) StatusRed.copy(alpha = 0.08f)
                         else if (isSharing) GeoBluePrimary.copy(alpha = 0.08f)
                         else MaterialTheme.colorScheme.surfaceVariant,
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            if (isSharing) GeoBluePrimary.copy(alpha = 0.3f) else Color.Transparent
+                        ),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
@@ -309,18 +476,18 @@ fun UserTrackerScreen(
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Column {
                                     Text(
-                                        text = if (isFakeGpsDetected) "Lokasi Ditolak (Fake GPS)"
-                                        else if (isSharing) "Sharelok Real-Time Aktif"
-                                        else "Sharelok Dinonaktifkan",
+                                        text = if (isFakeGpsDetected) "Lokasi Ditolak (Mock Provider)"
+                                        else if (isSharing) "Transmisi Rute GPS Aktif"
+                                        else "Transmisi Lokasi Standby",
                                         style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.Bold,
                                         color = if (isFakeGpsDetected) StatusRed else MaterialTheme.colorScheme.onSurface
                                     )
                                     Text(
-                                        text = if (isFakeGpsDetected) "Matikan Fake GPS untuk membagikan lokasi"
-                                        else if (isSharing) "Setiap gerak Anda dipantau real-time oleh perusahaan"
-                                        else "Nyalakan untuk mulai pelacakan rute",
-                                        style = MaterialTheme.typography.bodySmall,
+                                        text = if (isFakeGpsDetected) "Matikan Fake GPS di HP Anda"
+                                        else if (isSharing) "Posisi Anda dipantau real-time oleh dispatcher"
+                                        else "Aktifkan untuk mulai perjalanan & tugas rute",
+                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
@@ -340,84 +507,37 @@ fun UserTrackerScreen(
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    // Anti-Fake GPS Detection Security Badge
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = if (isFakeGpsDetected) StatusRed.copy(alpha = 0.12f) else StatusGreen.copy(alpha = 0.08f),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = if (isFakeGpsDetected) Icons.Default.GpsOff else Icons.Default.Security,
-                                    contentDescription = null,
-                                    tint = if (isFakeGpsDetected) StatusRed else StatusGreen,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = if (isFakeGpsDetected) "Deteksi: Teridentifikasi Mock Provider" else "Anti-Fake GPS: Aman (GPS Asli)",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isFakeGpsDetected) StatusRed else StatusGreen
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    // Telemetry Grid
+                    // Quick Telematics Summary Pills
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        TelemetryPill(
-                            label = "Kecepatan",
-                            value = "${(currentPt?.speedKmh ?: 0f).toInt()} km/h",
-                            icon = Icons.Default.Speed,
+                        QuickMetricCard(
+                            label = "Waktu Jalan",
+                            value = "${tripMinutes}m",
+                            icon = Icons.Default.Timer,
                             tint = GeoBluePrimary,
                             modifier = Modifier.weight(1f)
                         )
-                        TelemetryPill(
-                            label = "Akurasi",
-                            value = "±${(currentPt?.accuracyMeters ?: 3f).toInt()}m",
+                        QuickMetricCard(
+                            label = "Akurasi GPS",
+                            value = "±${(currentPt?.accuracyMeters ?: 4f).toInt()}m",
                             icon = Icons.Default.GpsFixed,
                             tint = GeoCyanAccent,
                             modifier = Modifier.weight(1f)
                         )
-                        TelemetryPill(
-                            label = "Elevasi",
-                            value = "${(currentPt?.altitude ?: 25.0).toInt()} mdpl",
-                            icon = Icons.Default.Terrain,
-                            tint = StatusGreen,
-                            modifier = Modifier.weight(1f)
-                        )
-                        val batteryVal = "${realBattery.percentage}%" + if (realBattery.isCharging) " ⚡" else ""
-                        val batteryTint = when {
-                            realBattery.isCharging -> StatusGreen
-                            realBattery.percentage <= 20 -> StatusRed
-                            realBattery.percentage <= 50 -> StatusYellow
-                            else -> GeoBluePrimary
-                        }
-                        TelemetryPill(
-                            label = if (realBattery.isCharging) "Baterai ⚡" else "Baterai HP",
-                            value = batteryVal,
-                            icon = if (realBattery.isCharging) Icons.Default.BatteryChargingFull else Icons.Default.BatteryFull,
-                            tint = batteryTint,
+                        QuickMetricCard(
+                            label = "Status Jalur",
+                            value = if (isSharing) "Terhubung" else "Standby",
+                            icon = Icons.Default.Route,
+                            tint = if (isSharing) StatusGreen else Color.Gray,
                             modifier = Modifier.weight(1f)
                         )
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Direct Chat Admin button (User only chats with Company Admin)
+                    // Direct Chat with Admin Button (1-on-1 Driver to Admin)
                     Button(
                         onClick = {
                             viewModel.openChatWithUser(user.userId)
@@ -425,19 +545,23 @@ fun UserTrackerScreen(
                         },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(46.dp)
+                            .height(48.dp)
                             .testTag("btn_open_chat_dispatcher"),
                         colors = ButtonDefaults.buttonColors(containerColor = GeoBluePrimary),
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(19.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("💬 Hubungi / Chat Admin Perusahaan", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = "Hubungi Admin / Dispatcher",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    // Export History & Clear Buttons
+                    // Export History & Clear Trip Controls
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -446,34 +570,34 @@ fun UserTrackerScreen(
                             onClick = { viewModel.exportHistory(historyPoints, "CSV") },
                             modifier = Modifier
                                 .weight(1f)
-                                .height(46.dp)
+                                .height(44.dp)
                                 .testTag("btn_export_csv"),
-                            colors = ButtonDefaults.buttonColors(containerColor = GeoBluePrimary),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
                             shape = RoundedCornerShape(10.dp)
                         ) {
-                            Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Ekspor CSV", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(5.dp))
+                            Text("Ekspor CSV", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
 
                         Button(
                             onClick = { viewModel.exportHistory(historyPoints, "GeoJSON") },
                             modifier = Modifier
                                 .weight(1f)
-                                .height(46.dp)
+                                .height(44.dp)
                                 .testTag("btn_export_geojson"),
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary),
                             shape = RoundedCornerShape(10.dp)
                         ) {
-                            Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("GeoJSON", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(5.dp))
+                            Text("GeoJSON", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
 
                         OutlinedButton(
                             onClick = { viewModel.clearHistory() },
                             modifier = Modifier
-                                .height(46.dp)
+                                .height(44.dp)
                                 .testTag("btn_clear_history"),
                             shape = RoundedCornerShape(10.dp)
                         ) {
@@ -485,7 +609,7 @@ fun UserTrackerScreen(
         }
     }
 
-    // 1-on-1 Chat Sheet with Admin
+    // 1-on-1 Chat Sheet with Admin (User only communicates with Company Admin)
     if (showChatSheet) {
         val chatMessages by viewModel.activeChatMessages.collectAsState()
         AdminUserChatSheet(
@@ -506,7 +630,7 @@ fun UserTrackerScreen(
 }
 
 @Composable
-private fun TelemetryPill(
+private fun QuickMetricCard(
     label: String,
     value: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
@@ -516,16 +640,17 @@ private fun TelemetryPill(
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Icon(imageVector = icon, contentDescription = null, tint = tint, modifier = Modifier.size(16.dp))
+            Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = value,
-                style = MaterialTheme.typography.labelLarge,
+                style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
             )
