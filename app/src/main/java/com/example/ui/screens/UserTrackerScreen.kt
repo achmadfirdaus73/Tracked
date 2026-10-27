@@ -21,6 +21,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BatteryChargingFull
+import androidx.compose.material.icons.filled.BatteryFull
+import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Download
@@ -57,11 +59,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.delay
 import com.example.data.model.UserProfile
+import com.example.util.BatteryHelper
+import com.example.ui.components.AdminUserChatSheet
 import com.example.ui.components.AppMapContainer
 import com.example.ui.theme.GeoBluePrimary
 import com.example.ui.theme.GeoCyanAccent
@@ -83,6 +90,18 @@ fun UserTrackerScreen(
     val geofences by viewModel.companyGeofences.collectAsState()
     val alertBanner by viewModel.activeAlertBanner.collectAsState()
 
+    val context = LocalContext.current
+    var realBattery by remember { mutableStateOf(BatteryHelper.getBatteryStatus(context)) }
+    var showChatSheet by remember { mutableStateOf(false) }
+
+    // Continuously read the user's actual phone battery level and charging status
+    LaunchedEffect(Unit) {
+        while (true) {
+            realBattery = BatteryHelper.getBatteryStatus(context)
+            delay(4000L)
+        }
+    }
+
     val isFakeGpsDetected = currentPt?.isMock == true
 
     Scaffold(
@@ -91,18 +110,31 @@ fun UserTrackerScreen(
                 title = {
                     Column {
                         Text(
-                            text = user.fullName,
+                            text = "${user.fullName} ${user.vehicleType.iconEmoji}",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "${user.companyId} • ${user.unitCode}",
+                            text = "${user.companyId} • ${user.unitCode} (${user.vehicleType.label})",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 },
                 actions = {
+                    IconButton(
+                        onClick = {
+                            viewModel.openChatWithUser(user.userId)
+                            showChatSheet = true
+                        },
+                        modifier = Modifier.testTag("btn_topbar_chat_admin")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Chat,
+                            contentDescription = "Chat Admin",
+                            tint = GeoBluePrimary
+                        )
+                    }
                     IconButton(
                         onClick = { viewModel.logout() },
                         modifier = Modifier.testTag("btn_user_logout")
@@ -228,6 +260,7 @@ fun UserTrackerScreen(
                     geofences = geofences,
                     userLabel = user.fullName,
                     isLiveTracking = isSharing,
+                    vehicleType = user.vehicleType,
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -366,16 +399,43 @@ fun UserTrackerScreen(
                             tint = StatusGreen,
                             modifier = Modifier.weight(1f)
                         )
+                        val batteryVal = "${realBattery.percentage}%" + if (realBattery.isCharging) " ⚡" else ""
+                        val batteryTint = when {
+                            realBattery.isCharging -> StatusGreen
+                            realBattery.percentage <= 20 -> StatusRed
+                            realBattery.percentage <= 50 -> StatusYellow
+                            else -> GeoBluePrimary
+                        }
                         TelemetryPill(
-                            label = "Baterai",
-                            value = "${currentPt?.batteryLevel ?: 88}%",
-                            icon = Icons.Default.BatteryChargingFull,
-                            tint = Color(0xFF64748B),
+                            label = if (realBattery.isCharging) "Baterai ⚡" else "Baterai HP",
+                            value = batteryVal,
+                            icon = if (realBattery.isCharging) Icons.Default.BatteryChargingFull else Icons.Default.BatteryFull,
+                            tint = batteryTint,
                             modifier = Modifier.weight(1f)
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Direct Chat Admin button (User only chats with Company Admin)
+                    Button(
+                        onClick = {
+                            viewModel.openChatWithUser(user.userId)
+                            showChatSheet = true
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(46.dp)
+                            .testTag("btn_open_chat_dispatcher"),
+                        colors = ButtonDefaults.buttonColors(containerColor = GeoBluePrimary),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("💬 Hubungi / Chat Admin Perusahaan", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
 
                     // Export History & Clear Buttons
                     Row(
@@ -423,6 +483,25 @@ fun UserTrackerScreen(
                 }
             }
         }
+    }
+
+    // 1-on-1 Chat Sheet with Admin
+    if (showChatSheet) {
+        val chatMessages by viewModel.activeChatMessages.collectAsState()
+        AdminUserChatSheet(
+            title = "Chat Admin Perusahaan",
+            subtitle = "Admin / Dispatcher • ${user.companyId}",
+            messages = chatMessages,
+            currentSenderId = user.userId,
+            currentSenderRole = "USER",
+            onSendMessage = { text ->
+                viewModel.sendChatMessage(text)
+            },
+            onDismiss = {
+                showChatSheet = false
+                viewModel.closeChat()
+            }
+        )
     }
 }
 

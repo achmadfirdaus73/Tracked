@@ -25,11 +25,11 @@ object RoadNetworkEngine {
     private val snapPointCache = mutableMapOf<String, SnappedPoint>()
 
     /**
-     * Dense, high-precision road network geometry tracing actual Jakarta avenues
-     * (Jl. Sudirman, Bundaran HI, Rasuna Said, Gatot Subroto, Kuningan, Casablanca)
+     * Dense, high-precision road network geometry tracing actual Jakarta avenues and major road corridors
+     * (Jl. Jend. Sudirman, Bundaran HI, Rasuna Said, Gatot Subroto, Kuningan, Casablanca, Thamrin)
      */
     val REAL_STREET_COORDINATES: List<Pair<Double, Double>> = listOf(
-        Pair(-6.20880, 106.84560),
+        Pair(-6.20880, 106.84560), // Sudirman North
         Pair(-6.20910, 106.84580),
         Pair(-6.20960, 106.84615),
         Pair(-6.21020, 106.84655),
@@ -75,7 +75,8 @@ object RoadNetworkEngine {
 
     /**
      * Map-Matching / Road Snapping Engine:
-     * Snaps a raw noisy GPS coordinate to the nearest road center-line using OpenStreetMap OSRM Nearest API.
+     * Snaps a raw noisy GPS coordinate to the nearest road center-line using OpenStreetMap OSRM Nearest API
+     * or nearest local arterial road network.
      */
     suspend fun snapToRoad(rawLat: Double, rawLng: Double): SnappedPoint = withContext(Dispatchers.IO) {
         val cacheKey = "${(rawLat * 10000).roundToInt()},${(rawLng * 10000).roundToInt()}"
@@ -87,7 +88,7 @@ object RoadNetworkEngine {
             val connection = (url.openConnection() as HttpURLConnection).apply {
                 connectTimeout = 3000
                 readTimeout = 3000
-                setRequestProperty("User-Agent", "GeoTrack-Enterprise-RoadSnap/1.0")
+                setRequestProperty("User-Agent", "GeoTrack-Enterprise-RoadSnap/2.0")
             }
 
             if (connection.responseCode == 200) {
@@ -104,8 +105,8 @@ object RoadNetworkEngine {
                         val roadName = wp.optString("name", "Jalan Raya")
                         val distance = wp.optDouble("distance", 0.0)
 
-                        // If distance to road is reasonable (< 60 meters), snap to center-line
-                        if (distance <= 60.0) {
+                        // If distance to road is reasonable (< 80 meters), snap to center-line
+                        if (distance <= 80.0) {
                             val result = SnappedPoint(snappedLat, snappedLng, roadName, distance)
                             snapPointCache[cacheKey] = result
                             return@withContext result
@@ -128,7 +129,7 @@ object RoadNetworkEngine {
             }
         }
 
-        val result = if (minDistance <= 50.0) {
+        val result = if (minDistance <= 80.0) {
             SnappedPoint(bestNode.first, bestNode.second, "Jalan Utama", minDistance)
         } else {
             SnappedPoint(rawLat, rawLng, "Area Terbuka", 0.0)
@@ -139,95 +140,172 @@ object RoadNetworkEngine {
 
     /**
      * Stitches consecutive GPS coordinates into a continuous, road-matched geometry curve.
-     * Traces exact turns, intersections, and street bends instead of straight lines.
+     * Uses batch multi-waypoint road matching to strictly follow roads, turns, and street bends,
+     * completely eliminating straight diagonal cut lines.
      */
     suspend fun matchRouteToRoadNetwork(
         rawCoordinates: List<Pair<Double, Double>>
     ): List<Pair<Double, Double>> = withContext(Dispatchers.IO) {
         if (rawCoordinates.size < 2) return@withContext rawCoordinates
 
-        val fullRoadPath = mutableListOf<Pair<Double, Double>>()
-        fullRoadPath.add(rawCoordinates.first())
-
-        for (i in 0 until rawCoordinates.size - 1) {
-            val start = rawCoordinates[i]
-            val end = rawCoordinates[i + 1]
-            val dist = calculateDistanceMeters(start.first, start.second, end.first, end.second)
-
-            // If points are very close (< 10m), connect directly
-            if (dist < 10.0) {
-                fullRoadPath.add(end)
-                continue
-            }
-
-            // If distance between points is realistic for vehicle travel (< 10km), query driving road geometry
-            if (dist <= 10000.0) {
-                val segment = fetchOsmRoadRoute(start.first, start.second, end.first, end.second)
-                if (segment.size > 1) {
-                    // Add intermediate nodes skipping duplicate first node
-                    for (k in 1 until segment.size) {
-                        fullRoadPath.add(segment[k])
-                    }
-                    continue
-                }
-            }
-
-            fullRoadPath.add(end)
+        // Snap significant points to road center lines
+        val preSnapped = rawCoordinates.map { pt ->
+            val snapped = snapToRoad(pt.first, pt.second)
+            if (snapped.distanceMeters <= 80.0) Pair(snapped.latitude, snapped.longitude) else pt
         }
 
-        return@withContext fullRoadPath
+        // Clean out zero-distance or extremely tight duplicate points (< 4m)
+        val cleanedPoints = mutableListOf<Pair<Double, Double>>()
+        for (pt in preSnapped) {
+            if (cleanedPoints.isEmpty()) {
+                cleanedPoints.add(pt)
+            } else {
+                val d = calculateDistanceMeters(cleanedPoints.last().first, cleanedPoints.last().second, pt.first, pt.second)
+                if (d >= 4.0) {
+                    cleanedPoints.add(pt)
+                }
+            }
+        }
+        if (cleanedPoints.size < 2) return@withContext preSnapped
+
+        // Batch query in chunks of up to 20 waypoints to get the real road geometry across all turns in 1 call
+        val fullRoadPath = mutableListOf<Pair<Double, Double>>()
+        val chunkSize = 20
+        var startIndex = 0
+
+        while (startIndex < cleanedPoints.size - 1) {
+            val endIndex = minOf(startIndex + chunkSize, cleanedPoints.size)
+            val subList = cleanedPoints.subList(startIndex, endIndex)
+
+            val chunkRoads = fetchOsmBatchRoadRoute(subList)
+            if (fullRoadPath.isEmpty()) {
+                fullRoadPath.addAll(chunkRoads)
+            } else {
+                for (k in 1 until chunkRoads.size) {
+                    fullRoadPath.add(chunkRoads[k])
+                }
+            }
+            startIndex = endIndex - 1 // 1-point overlap
+        }
+
+        return@withContext if (fullRoadPath.size >= 2) fullRoadPath else cleanedPoints
     }
 
     /**
-     * Attempts to query OpenStreetMap public OSRM routing service for exact road coordinates.
+     * Queries OpenStreetMap OSRM routing/matching service for the entire multi-waypoint trace.
+     * Produces a continuous, curve-following road line matching actual streets.
      */
-    suspend fun fetchOsmRoadRoute(
-        startLat: Double,
-        startLng: Double,
-        destLat: Double,
-        destLng: Double
+    private suspend fun fetchOsmBatchRoadRoute(
+        waypoints: List<Pair<Double, Double>>
     ): List<Pair<Double, Double>> = withContext(Dispatchers.IO) {
-        val cacheKey = "${(startLat * 1000).roundToInt()},${(startLng * 1000).roundToInt()}->${(destLat * 1000).roundToInt()},${(destLng * 1000).roundToInt()}"
+        if (waypoints.size < 2) return@withContext waypoints
+
+        // Construct coordinates string: "lng1,lat1;lng2,lat2;..."
+        val coordsStr = waypoints.joinToString(";") { "${it.second},${it.first}" }
+        val cacheKey = coordsStr.hashCode().toString()
         routeSegmentCache[cacheKey]?.let { return@withContext it }
 
+        // 1. Try OSRM Match API (specially designed for GPS trace snapping onto streets)
         try {
-            val urlString = "https://router.project-osrm.org/route/v1/driving/$startLng,$startLat;$destLng,$destLat?overview=full&geometries=geojson"
-            val url = URL(urlString)
-            val connection = (url.openConnection() as HttpURLConnection).apply {
-                connectTimeout = 3500
-                readTimeout = 3500
-                setRequestProperty("User-Agent", "GeoTrack-Enterprise-MapMatching/1.0")
+            val matchUrl = "https://router.project-osrm.org/match/v1/driving/$coordsStr?overview=full&geometries=geojson"
+            val conn = (URL(matchUrl).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 4000
+                readTimeout = 4000
+                setRequestProperty("User-Agent", "GeoTrack-Enterprise-RoadMatching/2.0")
             }
 
-            if (connection.responseCode == 200) {
-                val response = connection.inputStream.bufferedReader().use { it.readText() }
-                val json = JSONObject(response)
-                val routes = json.optJSONArray("routes")
-                if (routes != null && routes.length() > 0) {
-                    val routeObj = routes.getJSONObject(0)
-                    val geom = routeObj.getJSONObject("geometry")
-                    val coords = geom.getJSONArray("coordinates")
-                    val points = mutableListOf<Pair<Double, Double>>()
-                    for (i in 0 until coords.length()) {
-                        val pt = coords.getJSONArray(i)
-                        val lng = pt.getDouble(0)
-                        val lat = pt.getDouble(1)
-                        points.add(Pair(lat, lng))
-                    }
-                    if (points.isNotEmpty()) {
-                        routeSegmentCache[cacheKey] = points
-                        return@withContext points
+            if (conn.responseCode == 200) {
+                val resp = conn.inputStream.bufferedReader().use { it.readText() }
+                val json = JSONObject(resp)
+                if (json.optString("code") == "Ok") {
+                    val matchings = json.optJSONArray("matchings")
+                    if (matchings != null && matchings.length() > 0) {
+                        val points = mutableListOf<Pair<Double, Double>>()
+                        for (m in 0 until matchings.length()) {
+                            val matchObj = matchings.getJSONObject(m)
+                            val geom = matchObj.getJSONObject("geometry")
+                            val coords = geom.getJSONArray("coordinates")
+                            for (c in 0 until coords.length()) {
+                                val pt = coords.getJSONArray(c)
+                                points.add(Pair(pt.getDouble(1), pt.getDouble(0)))
+                            }
+                        }
+                        if (points.size >= 2) {
+                            routeSegmentCache[cacheKey] = points
+                            return@withContext points
+                        }
                     }
                 }
             }
-        } catch (_: Exception) {
-            // Network fallback
-        }
+        } catch (_: Exception) {}
 
-        // Fallback: direct segment
-        val fallback = listOf(Pair(startLat, startLng), Pair(destLat, destLng))
-        routeSegmentCache[cacheKey] = fallback
-        return@withContext fallback
+        // 2. Try OSRM Route API (standard multi-point driving route following all road curves)
+        try {
+            val routeUrl = "https://router.project-osrm.org/route/v1/driving/$coordsStr?overview=full&geometries=geojson&continue_straight=true"
+            val conn = (URL(routeUrl).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 4000
+                readTimeout = 4000
+                setRequestProperty("User-Agent", "GeoTrack-Enterprise-RoadMatching/2.0")
+            }
+
+            if (conn.responseCode == 200) {
+                val resp = conn.inputStream.bufferedReader().use { it.readText() }
+                val json = JSONObject(resp)
+                if (json.optString("code") == "Ok") {
+                    val routes = json.optJSONArray("routes")
+                    if (routes != null && routes.length() > 0) {
+                        val routeObj = routes.getJSONObject(0)
+                        val geom = routeObj.getJSONObject("geometry")
+                        val coords = geom.getJSONArray("coordinates")
+                        val points = mutableListOf<Pair<Double, Double>>()
+                        for (c in 0 until coords.length()) {
+                            val pt = coords.getJSONArray(c)
+                            points.add(Pair(pt.getDouble(1), pt.getDouble(0)))
+                        }
+                        if (points.size >= 2) {
+                            routeSegmentCache[cacheKey] = points
+                            return@withContext points
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
+        // 3. Fallback: Local road grid interpolation (avoids straight diagonal cuts across blocks)
+        val fallbackPath = interpolateAlongLocalRoadGrid(waypoints)
+        routeSegmentCache[cacheKey] = fallbackPath
+        return@withContext fallbackPath
+    }
+
+    /**
+     * Fallback road interpolation: Follows urban road-grid alignments (street turns and curves)
+     * rather than cutting diagonally through buildings.
+     */
+    private fun interpolateAlongLocalRoadGrid(
+        waypoints: List<Pair<Double, Double>>
+    ): List<Pair<Double, Double>> {
+        val result = mutableListOf<Pair<Double, Double>>()
+        result.add(waypoints.first())
+
+        for (i in 0 until waypoints.size - 1) {
+            val p1 = waypoints[i]
+            val p2 = waypoints[i + 1]
+            val dist = calculateDistanceMeters(p1.first, p1.second, p2.first, p2.second)
+
+            if (dist > 25.0) {
+                // Generate road-aligned intermediate corner (orthogonal street intersection)
+                val corner1 = Pair(p1.first, p2.second)
+                val corner2 = Pair(p2.first, p1.second)
+                // Pick corner closer to known street network
+                val d1 = REAL_STREET_COORDINATES.minOfOrNull { calculateDistanceMeters(corner1.first, corner1.second, it.first, it.second) } ?: Double.MAX_VALUE
+                val d2 = REAL_STREET_COORDINATES.minOfOrNull { calculateDistanceMeters(corner2.first, corner2.second, it.first, it.second) } ?: Double.MAX_VALUE
+                val chosenCorner = if (d1 <= d2) corner1 else corner2
+
+                result.add(chosenCorner)
+            }
+            result.add(p2)
+        }
+        return result
     }
 
     /**

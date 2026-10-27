@@ -1,5 +1,7 @@
 package com.example.data.model
 
+import java.util.UUID
+
 data class LocationPoint(
     val id: Long = 0,
     val userId: String,
@@ -12,7 +14,8 @@ data class LocationPoint(
     val bearing: Float = 0f,
     val timestamp: Long = System.currentTimeMillis(),
     val geofenceStatus: String = "Normal",
-    val batteryLevel: Int = 85,
+    val batteryLevel: Int = 100,
+    val isCharging: Boolean = false,
     val isMock: Boolean = false
 )
 
@@ -56,18 +59,61 @@ data class CompanyProfile(
     val registeredAt: Long = System.currentTimeMillis()
 )
 
+enum class VehicleType(
+    val label: String,
+    val iconEmoji: String,
+    val code: String
+) {
+    MOTORCYCLE("Sepeda Motor", "🛵", "motorcycle"),
+    CAR("Mobil", "🚗", "car"),
+    BICYCLE("Sepeda Gowes", "🚲", "bicycle"),
+    TRUCK("Truk / Pickup", "🚚", "truck"),
+    WALK("Jalan Kaki / Kurir", "🚶", "walk");
+
+    companion object {
+        fun fromCode(code: String?): VehicleType {
+            return entries.find { it.name.equals(code, ignoreCase = true) || it.code.equals(code, ignoreCase = true) } ?: MOTORCYCLE
+        }
+    }
+}
+
+data class StopPoint(
+    val id: String = UUID.randomUUID().toString(),
+    val userId: String = "",
+    val latitude: Double,
+    val longitude: Double,
+    val startTimestamp: Long,
+    val endTimestamp: Long,
+    val durationMinutes: Int,
+    val locationName: String = "Titik Berhenti"
+)
+
 data class UserProfile(
     val userId: String,
     val companyId: String,
     val email: String,
     val fullName: String,
     val unitCode: String,
+    val vehicleType: VehicleType = VehicleType.MOTORCYCLE,
     val isSharingLocation: Boolean = false,
     val lastLatitude: Double = -6.2088,
     val lastLongitude: Double = 106.8456,
     val lastSpeedKmh: Float = 0f,
     val lastUpdatedAt: Long = System.currentTimeMillis(),
+    val batteryLevel: Int = 100,
+    val isCharging: Boolean = false,
     val hasFakeGpsAlert: Boolean = false
+)
+
+data class ChatMessage(
+    val messageId: String = UUID.randomUUID().toString(),
+    val companyId: String = "",
+    val userId: String = "", // 1-on-1 thread per employee (User only chats with Admin)
+    val senderId: String = "",
+    val senderName: String = "",
+    val senderRole: String = "USER", // "ADMIN" or "USER"
+    val messageText: String = "",
+    val timestamp: Long = System.currentTimeMillis()
 )
 
 sealed interface AuthSession {

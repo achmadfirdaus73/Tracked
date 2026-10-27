@@ -192,6 +192,7 @@ class LocationEngine(
                 previousGeofenceState[fence.id] = isInsideNow
             }
 
+            val batteryStatus = BatteryHelper.getBatteryStatus(context)
             val pt = LocationPoint(
                 userId = user.userId,
                 companyId = user.companyId,
@@ -203,7 +204,8 @@ class LocationEngine(
                 bearing = bearingDeg,
                 timestamp = System.currentTimeMillis(),
                 geofenceStatus = statusDesc,
-                batteryLevel = 85,
+                batteryLevel = batteryStatus.percentage,
+                isCharging = batteryStatus.isCharging,
                 isMock = isMock
             )
 

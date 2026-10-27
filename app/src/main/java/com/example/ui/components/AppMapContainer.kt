@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.GeofenceZone
 import com.example.data.model.LocationPoint
+import com.example.data.model.VehicleType
 import com.example.ui.theme.GeoBluePrimary
 
 enum class MapEngine(val label: String) {
@@ -47,6 +48,7 @@ fun AppMapContainer(
     userLabel: String,
     isLiveTracking: Boolean,
     modifier: Modifier = Modifier,
+    vehicleType: VehicleType = VehicleType.MOTORCYCLE,
     highlightPointIndex: Int? = null,
     onMapCenterRequested: () -> Unit = {}
 ) {
@@ -60,6 +62,7 @@ fun AppMapContainer(
                     routePoints = routePoints,
                     geofences = geofences,
                     userLabel = userLabel,
+                    vehicleType = vehicleType,
                     isLiveTracking = isLiveTracking,
                     onMapCenterRequested = onMapCenterRequested,
                     modifier = Modifier.fillMaxSize()
@@ -71,6 +74,7 @@ fun AppMapContainer(
                     routePoints = routePoints,
                     geofences = geofences,
                     userLabel = userLabel,
+                    vehicleType = vehicleType,
                     isLiveTracking = isLiveTracking,
                     highlightPointIndex = highlightPointIndex,
                     onMapCenterRequested = onMapCenterRequested,

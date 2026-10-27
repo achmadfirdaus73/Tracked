@@ -1,10 +1,12 @@
 package com.example.data.repository
 
+import com.example.data.model.ChatMessage
 import com.example.data.model.CompanyProfile
 import com.example.data.model.GeofenceAlert
 import com.example.data.model.GeofenceZone
 import com.example.data.model.LocationPoint
 import com.example.data.model.UserProfile
+import com.example.data.model.VehicleType
 import com.example.data.model.ZoneType
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.channels.awaitClose
@@ -172,6 +174,7 @@ class TrackingRepository {
                 email = doc.getString("email") ?: normEmail,
                 fullName = doc.getString("fullName") ?: "",
                 unitCode = doc.getString("unitCode") ?: "Unit-01",
+                vehicleType = VehicleType.fromCode(doc.getString("vehicleType")),
                 isSharingLocation = doc.getBoolean("isSharingLocation") ?: true,
                 lastLatitude = doc.getDouble("lastLatitude") ?: -6.2088,
                 lastLongitude = doc.getDouble("lastLongitude") ?: 106.8456,
@@ -189,7 +192,8 @@ class TrackingRepository {
         companyId: String,
         email: String,
         fullName: String,
-        unitCode: String
+        unitCode: String,
+        vehicleType: VehicleType = VehicleType.MOTORCYCLE
     ): Result<UserProfile> {
         return try {
             val normCompanyId = companyId.trim().uppercase()
@@ -202,6 +206,7 @@ class TrackingRepository {
                 "email" to normEmail,
                 "fullName" to fullName.trim(),
                 "unitCode" to unitCode.trim().ifBlank { "Unit-01" },
+                "vehicleType" to vehicleType.name,
                 "isSharingLocation" to false,
                 "lastLatitude" to -6.2088,
                 "lastLongitude" to 106.8456,
@@ -219,6 +224,7 @@ class TrackingRepository {
                     email = normEmail,
                     fullName = fullName.trim(),
                     unitCode = unitCode.trim().ifBlank { "Unit-01" },
+                    vehicleType = vehicleType,
                     isSharingLocation = false,
                     lastLatitude = -6.2088,
                     lastLongitude = 106.8456,
@@ -230,6 +236,14 @@ class TrackingRepository {
         } catch (e: Exception) {
             Result.failure(Exception(e.message ?: "Gagal mendaftarkan karyawan ke Firestore"))
         }
+    }
+
+    suspend fun updateUserVehicleType(userId: String, vehicleType: VehicleType) {
+        try {
+            firestore.collection("users").document(userId)
+                .update("vehicleType", vehicleType.name)
+                .await()
+        } catch (_: Exception) { }
     }
 
     suspend fun setLocationSharing(userId: String, isSharing: Boolean) {
@@ -261,6 +275,7 @@ class TrackingRepository {
                 "timestamp" to point.timestamp,
                 "geofenceStatus" to point.geofenceStatus,
                 "batteryLevel" to point.batteryLevel,
+                "isCharging" to point.isCharging,
                 "isMock" to point.isMock
             )
             firestore.collection("location_points").document(pointId).set(pointData).await()
@@ -269,7 +284,9 @@ class TrackingRepository {
                 "lastLatitude" to point.latitude,
                 "lastLongitude" to point.longitude,
                 "lastSpeedKmh" to point.speedKmh,
-                "lastUpdatedAt" to point.timestamp
+                "lastUpdatedAt" to point.timestamp,
+                "batteryLevel" to point.batteryLevel,
+                "isCharging" to point.isCharging
             )
             if (point.isMock) {
                 userUpdate["hasFakeGpsAlert"] = true
@@ -296,11 +313,14 @@ class TrackingRepository {
                         email = doc.getString("email") ?: "",
                         fullName = doc.getString("fullName") ?: "",
                         unitCode = doc.getString("unitCode") ?: "",
+                        vehicleType = VehicleType.fromCode(doc.getString("vehicleType")),
                         isSharingLocation = doc.getBoolean("isSharingLocation") ?: false,
                         lastLatitude = doc.getDouble("lastLatitude") ?: -6.2088,
                         lastLongitude = doc.getDouble("lastLongitude") ?: 106.8456,
                         lastSpeedKmh = doc.getDouble("lastSpeedKmh")?.toFloat() ?: 0f,
                         lastUpdatedAt = doc.getLong("lastUpdatedAt") ?: System.currentTimeMillis(),
+                        batteryLevel = doc.getLong("batteryLevel")?.toInt() ?: 100,
+                        isCharging = doc.getBoolean("isCharging") ?: false,
                         hasFakeGpsAlert = doc.getBoolean("hasFakeGpsAlert") ?: false
                     )
                 } ?: emptyList()
@@ -479,5 +499,72 @@ class TrackingRepository {
         } catch (e: Exception) {
             // handle error
         }
+    }
+
+    /**
+     * 1-on-1 Chat between Admin and User.
+     * Note: User only chats with their Company Admin; users cannot chat with each other.
+     */
+    suspend fun sendChatMessage(
+        companyId: String,
+        userId: String,
+        senderId: String,
+        senderName: String,
+        senderRole: String,
+        text: String
+    ): Result<Unit> {
+        return try {
+            val msgId = UUID.randomUUID().toString()
+            val msgData = mapOf(
+                "messageId" to msgId,
+                "companyId" to companyId,
+                "userId" to userId,
+                "senderId" to senderId,
+                "senderName" to senderName,
+                "senderRole" to senderRole,
+                "messageText" to text.trim(),
+                "timestamp" to System.currentTimeMillis()
+            )
+            firestore.collection("companies")
+                .document(companyId)
+                .collection("chats")
+                .document(userId)
+                .collection("messages")
+                .document(msgId)
+                .set(msgData)
+                .await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    fun observeChatMessages(companyId: String, userId: String): Flow<List<ChatMessage>> = callbackFlow {
+        val listener = firestore.collection("companies")
+            .document(companyId)
+            .collection("chats")
+            .document(userId)
+            .collection("messages")
+            .orderBy("timestamp")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
+                val messages = snapshot?.documents?.mapNotNull { doc ->
+                    ChatMessage(
+                        messageId = doc.getString("messageId") ?: doc.id,
+                        companyId = doc.getString("companyId") ?: companyId,
+                        userId = doc.getString("userId") ?: userId,
+                        senderId = doc.getString("senderId") ?: "",
+                        senderName = doc.getString("senderName") ?: "",
+                        senderRole = doc.getString("senderRole") ?: "USER",
+                        messageText = doc.getString("messageText") ?: "",
+                        timestamp = doc.getLong("timestamp") ?: System.currentTimeMillis()
+                    )
+                } ?: emptyList()
+                trySend(messages)
+            }
+        awaitClose { listener.remove() }
     }
 }

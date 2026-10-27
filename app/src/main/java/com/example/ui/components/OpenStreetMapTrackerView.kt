@@ -46,6 +46,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.example.data.model.GeofenceZone
 import com.example.data.model.LocationPoint
+import com.example.data.model.VehicleType
+import com.example.util.MapMarkerHelper
+import com.example.util.StopPointDetector
 import com.example.ui.theme.GeoBluePrimary
 import com.example.ui.theme.GeoCyanAccent
 import com.example.ui.theme.StatusGreen
@@ -67,6 +70,7 @@ fun OpenStreetMapTrackerView(
     geofences: List<GeofenceZone>,
     modifier: Modifier = Modifier,
     userLabel: String = "User",
+    vehicleType: VehicleType = VehicleType.MOTORCYCLE,
     isLiveTracking: Boolean = true,
     onMapCenterRequested: () -> Unit = {}
 ) {
@@ -93,6 +97,11 @@ fun OpenStreetMapTrackerView(
 
     var roadSnappedGeoPoints by remember { mutableStateOf<List<GeoPoint>>(emptyList()) }
     var isRoadMatched by remember { mutableStateOf(false) }
+
+    // Detect Stop Points (periods of staying stationary for 5-10+ minutes)
+    val detectedStops = remember(routePoints) {
+        StopPointDetector.detectStopPoints(routePoints, minDurationMinutes = 5)
+    }
 
     // Map-Matching: Asynchronously stitch consecutive coordinates along actual OSM road geometry
     LaunchedEffect(routePoints) {
@@ -164,29 +173,49 @@ fun OpenStreetMapTrackerView(
                     }
                     map.overlays.add(polyline)
 
-                    // Start marker
+                    // 2a. Start marker (Distinct Emerald Green START Pin)
                     val startPt = routePoints.first()
                     val startMarker = Marker(map).apply {
                         position = GeoPoint(startPt.latitude, startPt.longitude)
-                        title = "Titik Awal Keberangkatan"
+                        icon = MapMarkerHelper.createStartMarkerDrawable(context)
+                        title = "🏁 Titik Awal Keberangkatan"
+                        snippet = "Mulai: ${StopPointDetector.formatTime(startPt.timestamp)}"
                         setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
                     }
                     map.overlays.add(startMarker)
+
+                    // 2b. Stop Point markers (Stops >= 5/10 minutes)
+                    for (stop in detectedStops) {
+                        val stopMarker = Marker(map).apply {
+                            position = GeoPoint(stop.latitude, stop.longitude)
+                            icon = MapMarkerHelper.createStopMarkerDrawable(context, stop.durationMinutes)
+                            title = "🛑 Titik Berhenti: ${stop.durationMinutes} Menit"
+                            snippet = "Waktu: ${StopPointDetector.formatTime(stop.startTimestamp)} - ${StopPointDetector.formatTime(stop.endTimestamp)}"
+                            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                        }
+                        map.overlays.add(stopMarker)
+                    }
                 }
 
-                // 3. Render Live User GPS Position Marker
+                // 3. Render Live User GPS Position Marker (Admin-Selected Vehicle Pin: Motor/Mobil/Sepeda/Truk)
                 if (currentPoint != null) {
                     val userMarker = Marker(map).apply {
                         position = GeoPoint(currentPoint.latitude, currentPoint.longitude)
-                        title = if (currentPoint.isMock) "⚠️ $userLabel [FAKE GPS!]" else "● $userLabel"
+                        icon = MapMarkerHelper.createVehicleMarkerDrawable(
+                            context = context,
+                            vehicleType = vehicleType,
+                            isLive = isLiveTracking,
+                            isMock = currentPoint.isMock
+                        )
+                        title = if (currentPoint.isMock) "⚠️ $userLabel [FAKE GPS!]" else "${vehicleType.iconEmoji} $userLabel (${vehicleType.label})"
                         snippet = String.format(
-                            "%.0f km/h | Akurasi: ±%.1fm | %s",
+                            "%.0f km/h | %s | Akurasi: ±%.1fm",
                             currentPoint.speedKmh,
-                            currentPoint.accuracyMeters,
-                            currentPoint.geofenceStatus
+                            currentPoint.geofenceStatus,
+                            currentPoint.accuracyMeters
                         )
                         rotation = currentPoint.bearing
-                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
                     }
                     map.overlays.add(userMarker)
                 }
@@ -245,9 +274,23 @@ fun OpenStreetMapTrackerView(
                             color = GeoBluePrimary
                         )
                         Spacer(modifier = Modifier.height(3.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "${vehicleType.iconEmoji} ${vehicleType.label}",
+                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                                color = GeoBluePrimary
+                            )
+                            if (detectedStops.isNotEmpty()) {
+                                Text(
+                                    text = " • 🛑 ${detectedStops.size} Titik Berhenti",
+                                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                                    color = StatusRed
+                                )
+                            }
+                        }
                         Text(
                             text = if (isRoadMatched) "🛣️ Map-Matching: Terhubung ke Jalur Jalan" else "🛣️ Road-Snapping: Aktif",
-                            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
                             color = StatusGreen
                         )
                     }

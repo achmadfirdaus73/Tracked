@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -25,6 +26,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddLocationAlt
 import androidx.compose.material.icons.filled.Analytics
+import androidx.compose.material.icons.filled.BatteryChargingFull
+import androidx.compose.material.icons.filled.BatteryFull
+import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DirectionsCar
@@ -82,7 +86,10 @@ import com.example.data.model.CompanyProfile
 import com.example.data.model.GeofenceZone
 import com.example.data.model.LocationPoint
 import com.example.data.model.UserProfile
+import com.example.data.model.VehicleType
 import com.example.data.model.ZoneType
+import com.example.util.StopPointDetector
+import com.example.ui.components.AdminUserChatSheet
 import com.example.ui.components.AppMapContainer
 import com.example.ui.components.InteractiveMapView
 import com.example.ui.components.RouteAnalyticsCharts
@@ -113,6 +120,8 @@ fun AdminDashboardScreen(
     var dashboardTab by remember { mutableIntStateOf(0) } // 0 = Peta Armada, 1 = Visualisasi Rute & Grafik, 2 = Geofencing, 3 = Karyawan
     var showAddGeofenceDialog by remember { mutableStateOf(false) }
     var showAddEmployeeDialog by remember { mutableStateOf(false) }
+    var userToEditVehicle by remember { mutableStateOf<UserProfile?>(null) }
+    var chatUser by remember { mutableStateOf<UserProfile?>(null) }
 
     // Auto select first user if none selected
     val activeSelectedUser = users.find { it.userId == selectedUserId } ?: users.firstOrNull()
@@ -289,16 +298,92 @@ fun AdminDashboardScreen(
                             }
                         }
 
-                        // Map View showing selected user's position, route & geofences (Google Maps SDK default)
+                        // Map View showing selected user's position, route & geofences
                         Box(modifier = Modifier.fillMaxSize()) {
                             AppMapContainer(
                                 currentPoint = currentSelectedPoint,
                                 routePoints = historyPoints,
                                 geofences = geofences,
                                 userLabel = if (activeSelectedUser?.hasFakeGpsAlert == true) "⚠️ ${activeSelectedUser.fullName} [FAKE GPS]" else activeSelectedUser?.fullName ?: "Armada",
+                                vehicleType = activeSelectedUser?.vehicleType ?: VehicleType.MOTORCYCLE,
                                 isLiveTracking = activeSelectedUser?.isSharingLocation ?: true,
                                 modifier = Modifier.fillMaxSize()
                             )
+
+                            // Quick Floating Driver Info & Chat Card
+                            activeSelectedUser?.let { selectedEmp ->
+                                Card(
+                                    modifier = Modifier
+                                        .align(Alignment.BottomCenter)
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                    elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(38.dp)
+                                                    .background(GeoBluePrimary.copy(alpha = 0.12f), CircleShape),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(selectedEmp.vehicleType.iconEmoji, fontSize = 20.sp)
+                                            }
+                                            Spacer(modifier = Modifier.width(10.dp))
+                                            Column {
+                                                Text(
+                                                    text = selectedEmp.fullName,
+                                                    style = MaterialTheme.typography.titleSmall,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    val batColor = when {
+                                                        selectedEmp.isCharging -> StatusGreen
+                                                        selectedEmp.batteryLevel <= 20 -> StatusRed
+                                                        selectedEmp.batteryLevel <= 50 -> StatusYellow
+                                                        else -> StatusGreen
+                                                    }
+                                                    Icon(
+                                                        imageVector = if (selectedEmp.isCharging) Icons.Default.BatteryChargingFull else Icons.Default.BatteryFull,
+                                                        contentDescription = null,
+                                                        tint = batColor,
+                                                        modifier = Modifier.size(14.dp)
+                                                    )
+                                                    Spacer(modifier = Modifier.width(3.dp))
+                                                    Text(
+                                                        text = "Baterai HP: ${selectedEmp.batteryLevel}%${if (selectedEmp.isCharging) " ⚡" else ""} • ${selectedEmp.unitCode}",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                            }
+                                        }
+
+                                        Button(
+                                            onClick = {
+                                                chatUser = selectedEmp
+                                                viewModel.openChatWithUser(selectedEmp.userId)
+                                            },
+                                            shape = RoundedCornerShape(10.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = GeoBluePrimary),
+                                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                            modifier = Modifier.testTag("btn_tab0_chat_driver")
+                                        ) {
+                                            Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("Chat", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -372,6 +457,83 @@ fun AdminDashboardScreen(
                             selectedIndex = highlightedIndex,
                             onPointSelected = { viewModel.setHighlightedIndex(it) }
                         )
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        // Detected Stop Points Section (Titik Berhenti 5-10+ Menit)
+                        val detectedStops = remember(historyPoints) {
+                            StopPointDetector.detectStopPoints(historyPoints, minDurationMinutes = 5)
+                        }
+
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                        ) {
+                            Column(modifier = Modifier.fillMaxWidth().padding(14.dp)) {
+                                Text(
+                                    text = "🛑 Riwayat Titik Berhenti (${detectedStops.size} Titik)",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Mendeteksi secara otomatis saat armada berhenti 5 hingga 10+ menit",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+                                if (detectedStops.isEmpty()) {
+                                    Text(
+                                        text = "Belum ada titik henti melebihi 5 menit pada rute ini.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Color.Gray
+                                    )
+                                } else {
+                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        detectedStops.forEachIndexed { idx, stop ->
+                                            Surface(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                shape = RoundedCornerShape(10.dp),
+                                                color = StatusRed.copy(alpha = 0.08f)
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(10.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Box(
+                                                        modifier = Modifier.size(34.dp).background(StatusRed, CircleShape),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Text("${idx + 1}", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                                    }
+                                                    Spacer(modifier = Modifier.width(10.dp))
+                                                    Column {
+                                                        Text(
+                                                            text = "🛑 Berhenti: ${stop.durationMinutes} Menit",
+                                                            fontWeight = FontWeight.Bold,
+                                                            fontSize = 13.sp,
+                                                            color = StatusRed
+                                                        )
+                                                        Text(
+                                                            text = "Waktu: ${StopPointDetector.formatTime(stop.startTimestamp)} - ${StopPointDetector.formatTime(stop.endTimestamp)}",
+                                                            fontSize = 11.sp,
+                                                            color = MaterialTheme.colorScheme.onSurface
+                                                        )
+                                                        Text(
+                                                            text = String.format(Locale.US, "Koordinat: %.5f, %.5f", stop.latitude, stop.longitude),
+                                                            fontSize = 10.sp,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
 
                         Spacer(modifier = Modifier.height(24.dp))
                     }
@@ -601,19 +763,14 @@ fun AdminDashboardScreen(
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             Box(
                                                 modifier = Modifier
-                                                    .size(40.dp)
-                                                    .background(GeoBluePrimary.copy(alpha = 0.15f), CircleShape),
+                                                    .size(42.dp)
+                                                    .background(GeoBluePrimary.copy(alpha = 0.12f), CircleShape),
                                                 contentAlignment = Alignment.Center
                                             ) {
-                                                Icon(
-                                                    imageVector = Icons.Default.Person,
-                                                    contentDescription = null,
-                                                    tint = GeoBluePrimary,
-                                                    modifier = Modifier.size(22.dp)
-                                                )
+                                                Text(usr.vehicleType.iconEmoji, fontSize = 22.sp)
                                             }
                                             Spacer(modifier = Modifier.width(12.dp))
-                                            Column {
+                                            Column(modifier = Modifier.weight(1f)) {
                                                 Text(
                                                     text = usr.fullName,
                                                     style = MaterialTheme.typography.titleSmall,
@@ -625,11 +782,48 @@ fun AdminDashboardScreen(
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
                                                 Text(
+                                                    text = "Tipe: ${usr.vehicleType.iconEmoji} ${usr.vehicleType.label}",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = GeoBluePrimary,
+                                                    fontWeight = FontWeight.Medium
+                                                )
+                                                Text(
+                                                    text = "Baterai HP: ${usr.batteryLevel}%${if (usr.isCharging) " ⚡ (Charging)" else ""}",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = when {
+                                                        usr.isCharging -> StatusGreen
+                                                        usr.batteryLevel <= 20 -> StatusRed
+                                                        usr.batteryLevel <= 50 -> StatusYellow
+                                                        else -> GeoBluePrimary
+                                                    },
+                                                    fontWeight = FontWeight.SemiBold
+                                                )
+                                                Text(
                                                     text = if (usr.hasFakeGpsAlert) "⚠️ FAKE GPS TERDETEKSI" else if (usr.isSharingLocation) "🟢 Live Aktif" else "🔴 Offline",
                                                     style = MaterialTheme.typography.labelSmall,
                                                     color = if (usr.hasFakeGpsAlert) StatusRed else if (usr.isSharingLocation) StatusGreen else Color.Gray,
                                                     fontWeight = FontWeight.Bold
                                                 )
+                                            }
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                TextButton(
+                                                    onClick = {
+                                                        chatUser = usr
+                                                        viewModel.openChatWithUser(usr.userId)
+                                                    },
+                                                    colors = ButtonDefaults.textButtonColors(contentColor = GeoBluePrimary),
+                                                    modifier = Modifier.testTag("btn_chat_employee_${usr.userId}")
+                                                ) {
+                                                    Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text("Chat", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                }
+                                                TextButton(
+                                                    onClick = { userToEditVehicle = usr },
+                                                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.secondary)
+                                                ) {
+                                                    Text("Ubah Icon", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                }
                                             }
                                         }
                                     }
@@ -759,6 +953,7 @@ fun AdminDashboardScreen(
         var empName by remember { mutableStateOf("") }
         var empEmail by remember { mutableStateOf("") }
         var empUnit by remember { mutableStateOf("Armada Unit-01") }
+        var selectedVehicle by remember { mutableStateOf(VehicleType.MOTORCYCLE) }
 
         AlertDialog(
             onDismissRequest = { showAddEmployeeDialog = false },
@@ -798,13 +993,36 @@ fun AdminDashboardScreen(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().testTag("input_emp_unit")
                     )
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Text(
+                        text = "Pilih Jenis Kendaraan / Icon Pin:",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        items(VehicleType.entries) { vType ->
+                            FilterChip(
+                                selected = selectedVehicle == vType,
+                                onClick = { selectedVehicle = vType },
+                                label = { Text("${vType.iconEmoji} ${vType.label}") },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = GeoBluePrimary,
+                                    selectedLabelColor = Color.White
+                                )
+                            )
+                        }
+                    }
                 }
             },
             confirmButton = {
                 Button(
                     onClick = {
                         if (empName.isNotBlank() && empEmail.isNotBlank()) {
-                            viewModel.addEmployee(empName, empEmail, empUnit)
+                            viewModel.addEmployee(empName, empEmail, empUnit, selectedVehicle)
                             showAddEmployeeDialog = false
                         }
                     },
@@ -817,6 +1035,106 @@ fun AdminDashboardScreen(
                 TextButton(onClick = { showAddEmployeeDialog = false }) {
                     Text("Batal")
                 }
+            }
+        )
+    }
+
+    // Edit Employee Vehicle Icon Dialog
+    userToEditVehicle?.let { targetUser ->
+        var selectedVehicle by remember(targetUser) { mutableStateOf(targetUser.vehicleType) }
+
+        AlertDialog(
+            onDismissRequest = { userToEditVehicle = null },
+            title = {
+                Text(
+                    text = "Pilih Icon Kendaraan: ${targetUser.fullName}",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column {
+                    Text(
+                        text = "Icon pin armada ini akan tampil di peta pemantauan admin dan rute live karyawan.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        VehicleType.entries.forEach { vType ->
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (selectedVehicle == vType) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                border = if (selectedVehicle == vType) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { selectedVehicle = vType }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(vType.iconEmoji, fontSize = 24.sp)
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(vType.label, fontWeight = FontWeight.SemiBold)
+                                        Text(
+                                            when (vType) {
+                                                VehicleType.MOTORCYCLE -> "Motor / Roda Dua"
+                                                VehicleType.CAR -> "Mobil Pribadi / Dinas"
+                                                VehicleType.BICYCLE -> "Sepeda Patroli / Kurir"
+                                                VehicleType.TRUCK -> "Truk Angkut / Box Armada"
+                                                VehicleType.WALK -> "Petugas Lapangan / Pejalan"
+                                            },
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    if (selectedVehicle == vType) {
+                                        Icon(
+                                            imageVector = Icons.Default.CheckCircle,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.updateEmployeeVehicleType(targetUser.userId, selectedVehicle)
+                        userToEditVehicle = null
+                    }
+                ) {
+                    Text("Simpan Icon")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { userToEditVehicle = null }) {
+                    Text("Batal")
+                }
+            }
+        )
+    }
+
+    // 1-on-1 Chat Sheet with Driver (Admin <-> Specific Driver only)
+    chatUser?.let { targetUser ->
+        val chatMessages by viewModel.activeChatMessages.collectAsState()
+        AdminUserChatSheet(
+            title = "Chat Driver: ${targetUser.fullName}",
+            subtitle = "${targetUser.unitCode} • ${targetUser.vehicleType.label} • ${company.companyName}",
+            messages = chatMessages,
+            currentSenderId = "admin",
+            currentSenderRole = "ADMIN",
+            onSendMessage = { text ->
+                viewModel.sendChatMessage(text, targetUser.userId)
+            },
+            onDismiss = {
+                chatUser = null
+                viewModel.closeChat()
             }
         )
     }

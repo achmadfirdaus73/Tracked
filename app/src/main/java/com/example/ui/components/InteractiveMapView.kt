@@ -80,6 +80,7 @@ fun InteractiveMapView(
     geofences: List<GeofenceZone>,
     modifier: Modifier = Modifier,
     userLabel: String = "User",
+    vehicleType: com.example.data.model.VehicleType = com.example.data.model.VehicleType.MOTORCYCLE,
     isLiveTracking: Boolean = true,
     highlightPointIndex: Int? = null,
     onMapCenterRequested: () -> Unit = {}
@@ -88,6 +89,11 @@ fun InteractiveMapView(
     var panOffsetX by remember { mutableFloatStateOf(0f) }
     var panOffsetY by remember { mutableFloatStateOf(0f) }
     var isDarkMapStyle by remember { mutableStateOf(false) }
+
+    // Detect 5-10 minute Stop Points
+    val detectedStops = remember(routePoints) {
+        com.example.util.StopPointDetector.detectStopPoints(routePoints, minDurationMinutes = 5)
+    }
 
     var matchedCoords by remember { mutableStateOf<List<Pair<Double, Double>>>(emptyList()) }
 
@@ -265,18 +271,91 @@ fun InteractiveMapView(
                     )
                 }
 
-                // Draw Start Point Marker (First Point)
+                // Draw Start Point Marker (Distinct Emerald Green START Pin)
                 val startPx = geoToPixel(routePoints.first().latitude, routePoints.first().longitude)
                 drawCircle(
                     color = StatusGreen,
-                    radius = 9.dp.toPx(),
+                    radius = 12.dp.toPx(),
                     center = startPx
                 )
                 drawCircle(
                     color = Color.White,
+                    radius = 8.dp.toPx(),
+                    center = startPx
+                )
+                drawCircle(
+                    color = StatusGreen,
                     radius = 5.dp.toPx(),
                     center = startPx
                 )
+
+                drawContext.canvas.nativeCanvas.apply {
+                    val paint = android.graphics.Paint().apply {
+                        color = android.graphics.Color.WHITE
+                        textSize = 26f
+                        isFakeBoldText = true
+                        textAlign = android.graphics.Paint.Align.CENTER
+                    }
+                    val bgPaint = android.graphics.Paint().apply {
+                        color = android.graphics.Color.parseColor("#059669")
+                        style = android.graphics.Paint.Style.FILL
+                    }
+                    val text = "🏁 START"
+                    val bounds = android.graphics.Rect()
+                    paint.getTextBounds(text, 0, text.length, bounds)
+                    val bgRect = android.graphics.RectF(
+                        startPx.x - bounds.width() / 2f - 16f,
+                        startPx.y - 20.dp.toPx() - 28f,
+                        startPx.x + bounds.width() / 2f + 16f,
+                        startPx.y - 20.dp.toPx() + 10f
+                    )
+                    drawRoundRect(bgRect, 12f, 12f, bgPaint)
+                    drawText(text, startPx.x, startPx.y - 20.dp.toPx() - 4f, paint)
+                }
+
+                // Draw Stop Points (5-10+ minutes stops)
+                for (stop in detectedStops) {
+                    val stopPx = geoToPixel(stop.latitude, stop.longitude)
+                    drawCircle(
+                        color = StatusRed,
+                        radius = 11.dp.toPx(),
+                        center = stopPx
+                    )
+                    drawCircle(
+                        color = Color.White,
+                        radius = 7.dp.toPx(),
+                        center = stopPx
+                    )
+                    drawCircle(
+                        color = StatusRed,
+                        radius = 4.dp.toPx(),
+                        center = stopPx
+                    )
+
+                    drawContext.canvas.nativeCanvas.apply {
+                        val paint = android.graphics.Paint().apply {
+                            color = android.graphics.Color.WHITE
+                            textSize = 24f
+                            isFakeBoldText = true
+                            textAlign = android.graphics.Paint.Align.CENTER
+                        }
+                        val bgPaint = android.graphics.Paint().apply {
+                            color = android.graphics.Color.parseColor("#DC2626")
+                            style = android.graphics.Paint.Style.FILL
+                        }
+                        val text = "🛑 ${stop.durationMinutes}m"
+                        val bounds = android.graphics.Rect()
+                        paint.getTextBounds(text, 0, text.length, bounds)
+                        val bgRect = android.graphics.RectF(
+                            stopPx.x - bounds.width() / 2f - 14f,
+                            stopPx.y - 18.dp.toPx() - 26f,
+                            stopPx.x + bounds.width() / 2f + 14f,
+                            stopPx.y - 18.dp.toPx() + 8f
+                        )
+                        drawRoundRect(bgRect, 10f, 10f, bgPaint)
+                        drawText(text, stopPx.x, stopPx.y - 18.dp.toPx() - 4f, paint)
+                    }
+                }
             }
 
             // 4. Highlighted scrubber point (if scrubbing history timeline)
@@ -383,7 +462,7 @@ fun InteractiveMapView(
                         style = android.graphics.Paint.Style.FILL
                     }
                     val speedText = String.format("%.0f km/h", currentPoint.speedKmh)
-                    val label = "● $userLabel | $speedText"
+                    val label = "${vehicleType.iconEmoji} $userLabel | $speedText"
                     val bounds = android.graphics.Rect()
                     paint.getTextBounds(label, 0, label.length, bounds)
                     val bgRect = android.graphics.RectF(

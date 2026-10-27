@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.local.AppDatabase
 import com.example.data.model.AuthSession
+import com.example.data.model.ChatMessage
 import com.example.data.model.CompanyProfile
 import com.example.data.model.GeofenceAlert
 import com.example.data.model.GeofenceZone
@@ -13,6 +14,8 @@ import com.example.data.model.LocationPoint
 import com.example.data.model.UserProfile
 import com.example.data.model.ZoneType
 import com.example.data.repository.TrackingRepository
+import com.example.util.BatteryHelper
+import com.example.util.BatteryStatus
 import com.example.util.ExportUtil
 import com.example.util.LocationEngine
 import com.google.firebase.FirebaseApp
@@ -101,6 +104,76 @@ class MainViewModel(private val application: Application) : ViewModel() {
             flowOf(emptyList())
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // 1-on-1 Chat Thread State (Admin <-> Employee). Users can ONLY chat with Admin.
+    private val _activeChatUserId = MutableStateFlow<String?>(null)
+    val activeChatUserId: StateFlow<String?> = _activeChatUserId.asStateFlow()
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val activeChatMessages: StateFlow<List<ChatMessage>> = _activeChatUserId.flatMapLatest { targetUid ->
+        val sess = _session.value
+        val effectiveUid = when (sess) {
+            is AuthSession.UserSession -> sess.user.userId
+            is AuthSession.AdminSession -> targetUid
+            else -> null
+        }
+        val companyId = when (sess) {
+            is AuthSession.UserSession -> sess.user.companyId
+            is AuthSession.AdminSession -> sess.company.companyId
+            else -> null
+        }
+        if (effectiveUid != null && companyId != null) {
+            repository.observeChatMessages(companyId, effectiveUid)
+        } else {
+            flowOf(emptyList())
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun openChatWithUser(userId: String?) {
+        _activeChatUserId.value = userId
+    }
+
+    fun closeChat() {
+        _activeChatUserId.value = null
+    }
+
+    fun sendChatMessage(text: String, targetUserId: String? = null) {
+        if (text.isBlank()) return
+        val sess = _session.value
+        viewModelScope.launch {
+            when (sess) {
+                is AuthSession.UserSession -> {
+                    // User only chats with their Company Admin (never with other users)
+                    repository.sendChatMessage(
+                        companyId = sess.user.companyId,
+                        userId = sess.user.userId,
+                        senderId = sess.user.userId,
+                        senderName = sess.user.fullName,
+                        senderRole = "USER",
+                        text = text
+                    )
+                }
+                is AuthSession.AdminSession -> {
+                    val uid = targetUserId ?: _activeChatUserId.value
+                    if (uid != null) {
+                        repository.sendChatMessage(
+                            companyId = sess.company.companyId,
+                            userId = uid,
+                            senderId = "admin",
+                            senderName = "Admin (${sess.company.companyName})",
+                            senderRole = "ADMIN",
+                            text = text
+                        )
+                    }
+                }
+                else -> {}
+            }
+        }
+    }
+
+    fun getDeviceBatteryStatus(): BatteryStatus {
+        return BatteryHelper.getBatteryStatus(application)
+    }
 
     fun selectUser(userId: String?) {
         _selectedUserId.value = userId
@@ -239,7 +312,8 @@ class MainViewModel(private val application: Application) : ViewModel() {
     fun addEmployee(
         fullName: String,
         email: String,
-        unitCode: String
+        unitCode: String,
+        vehicleType: com.example.data.model.VehicleType = com.example.data.model.VehicleType.MOTORCYCLE
     ) {
         val sess = _session.value
         val companyId = when (sess) {
@@ -248,12 +322,19 @@ class MainViewModel(private val application: Application) : ViewModel() {
         }
 
         viewModelScope.launch {
-            val result = repository.addEmployee(companyId, email, fullName, unitCode)
+            val result = repository.addEmployee(companyId, email, fullName, unitCode, vehicleType)
             result.onSuccess { user ->
                 _successMessage.value = "Karyawan '${user.fullName}' (${user.unitCode}) berhasil didaftarkan!"
             }.onFailure { err ->
                 _errorMessage.value = err.message ?: "Gagal mendaftarkan karyawan"
             }
+        }
+    }
+
+    fun updateEmployeeVehicleType(userId: String, vehicleType: com.example.data.model.VehicleType) {
+        viewModelScope.launch {
+            repository.updateUserVehicleType(userId, vehicleType)
+            _successMessage.value = "Tipe kendaraan berhasil diubah menjadi ${vehicleType.iconEmoji} ${vehicleType.label}"
         }
     }
 
