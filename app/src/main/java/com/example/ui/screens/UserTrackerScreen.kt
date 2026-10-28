@@ -100,6 +100,7 @@ fun UserTrackerScreen(
     val historyPoints by viewModel.targetUserHistory.collectAsState()
     val geofences by viewModel.companyGeofences.collectAsState()
     val alertBanner by viewModel.activeAlertBanner.collectAsState()
+    val activeTask by viewModel.activeUserTask.collectAsState()
 
     val context = LocalContext.current
     var realBattery by remember { mutableStateOf(BatteryHelper.getBatteryStatus(context)) }
@@ -332,6 +333,47 @@ fun UserTrackerScreen(
                 }
             }
 
+            // 2b. Destination Mission Banner for Driver
+            activeTask?.let { task ->
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 4.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (task.status == "ARRIVED") StatusGreen.copy(alpha = 0.15f) else Color(0xFF7C3AED).copy(alpha = 0.15f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, if (task.status == "ARRIVED") StatusGreen else Color(0xFF7C3AED))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(if (task.status == "ARRIVED") "✅" else "🎯", fontSize = 20.sp)
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = if (task.status == "ARRIVED") "Tiba di Tujuan: ${task.destinationName}" else "Tugas Tujuan: ${task.destinationName}",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = if (task.status == "ARRIVED") StatusGreen else Color(0xFF6D28D9)
+                            )
+                            if (task.status == "ARRIVED") {
+                                Text(
+                                    text = "🎉 Anda telah sampai di lokasi tujuan dalam waktu ${task.actualDurationMinutes ?: 0} menit",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            } else {
+                                Text(
+                                    text = "Estimasi: ~${task.estimatedMinutes} menit • ${task.notes.ifBlank { "Ikuti rute penunjuk arah di peta" }}",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             // 3. Map Container with Interactive HUD
             Box(
                 modifier = Modifier
@@ -346,6 +388,7 @@ fun UserTrackerScreen(
                     isLiveTracking = isSharing,
                     vehicleType = user.vehicleType,
                     compassHeading = compassHeading,
+                    destinationTask = activeTask,
                     isUserMode = true,
                     showTopStatusPill = false,
                     modifier = Modifier.fillMaxSize()

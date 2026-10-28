@@ -89,6 +89,22 @@ data class StopPoint(
     val locationName: String = "Titik Berhenti"
 )
 
+data class DestinationTask(
+    val taskId: String = UUID.randomUUID().toString(),
+    val companyId: String = "",
+    val userId: String = "",
+    val destinationName: String = "",
+    val latitude: Double = 0.0,
+    val longitude: Double = 0.0,
+    val assignedAt: Long = System.currentTimeMillis(),
+    val estimatedMinutes: Int = 0,
+    val distanceMeters: Float = 0f,
+    val status: String = "ASSIGNED", // "ASSIGNED", "ARRIVED", "CANCELLED"
+    val arrivedAt: Long? = null,
+    val actualDurationMinutes: Int? = null,
+    val notes: String = ""
+)
+
 data class UserProfile(
     val userId: String,
     val companyId: String,

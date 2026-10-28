@@ -48,11 +48,14 @@ fun AppMapContainer(
     userLabel: String,
     isLiveTracking: Boolean,
     modifier: Modifier = Modifier,
+    destinationTask: com.example.data.model.DestinationTask? = null,
     vehicleType: VehicleType = VehicleType.MOTORCYCLE,
     compassHeading: Float = 0f,
     isUserMode: Boolean = false,
     showTopStatusPill: Boolean = !isUserMode,
     highlightPointIndex: Int? = null,
+    focusedGeoPoint: org.osmdroid.util.GeoPoint? = null,
+    onMapTapped: ((Double, Double) -> Unit)? = null,
     onMapCenterRequested: () -> Unit = {}
 ) {
     var selectedEngine by remember { mutableStateOf(MapEngine.OPEN_STREET_MAP) }
@@ -70,6 +73,9 @@ fun AppMapContainer(
                     compassHeading = compassHeading,
                     isUserMode = isUserMode,
                     showTopStatusPill = showTopStatusPill,
+                    destinationTask = destinationTask,
+                    focusedGeoPoint = focusedGeoPoint,
+                    onMapTapped = onMapTapped,
                     onMapCenterRequested = onMapCenterRequested,
                     modifier = Modifier.fillMaxSize()
                 )
@@ -86,6 +92,8 @@ fun AppMapContainer(
                     isUserMode = isUserMode,
                     showTopStatusPill = showTopStatusPill,
                     highlightPointIndex = highlightPointIndex,
+                    destinationTask = destinationTask,
+                    onMapTapped = onMapTapped,
                     onMapCenterRequested = onMapCenterRequested,
                     modifier = Modifier.fillMaxSize()
                 )

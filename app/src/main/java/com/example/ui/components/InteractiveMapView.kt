@@ -9,6 +9,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -43,6 +44,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import com.example.util.RoadNetworkEngine
 import com.example.util.RouteSegmenter
 import androidx.compose.ui.Alignment
@@ -80,6 +83,7 @@ fun InteractiveMapView(
     routePoints: List<LocationPoint>,
     geofences: List<GeofenceZone>,
     modifier: Modifier = Modifier,
+    destinationTask: com.example.data.model.DestinationTask? = null,
     userLabel: String = "User",
     vehicleType: com.example.data.model.VehicleType = com.example.data.model.VehicleType.MOTORCYCLE,
     isLiveTracking: Boolean = true,
@@ -87,6 +91,7 @@ fun InteractiveMapView(
     isUserMode: Boolean = false,
     showTopStatusPill: Boolean = !isUserMode,
     highlightPointIndex: Int? = null,
+    onMapTapped: ((Double, Double) -> Unit)? = null,
     onMapCenterRequested: () -> Unit = {}
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -142,9 +147,13 @@ fun InteractiveMapView(
         }
     }
 
-    // Reference center anchor coordinate
-    val centerLat = currentPoint?.latitude ?: routePoints.lastOrNull()?.latitude ?: -6.2088
-    val centerLng = currentPoint?.longitude ?: routePoints.lastOrNull()?.longitude ?: 106.8456
+    // Reference center anchor coordinate: STABILIZED per user selection to prevent map jumping around!
+    var centerLat by remember(currentPoint?.userId) {
+        mutableStateOf(currentPoint?.latitude ?: routePoints.lastOrNull()?.latitude ?: -6.2088)
+    }
+    var centerLng by remember(currentPoint?.userId) {
+        mutableStateOf(currentPoint?.longitude ?: routePoints.lastOrNull()?.longitude ?: 106.8456)
+    }
 
     // Animate radar sweep & GPS pulse
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
@@ -160,6 +169,10 @@ fun InteractiveMapView(
 
     // Reset pan whenever requested or when recenter is tapped
     fun recenter() {
+        if (currentPoint != null) {
+            centerLat = currentPoint.latitude
+            centerLng = currentPoint.longitude
+        }
         panOffsetX = 0f
         panOffsetY = 0f
         onMapCenterRequested()
@@ -171,10 +184,32 @@ fun InteractiveMapView(
                 .fillMaxSize()
                 .testTag("interactive_canvas_map")
                 .pointerInput(Unit) {
-                    detectDragGestures { change, dragAmount ->
-                        change.consume()
-                        panOffsetX += dragAmount.x
-                        panOffsetY += dragAmount.y
+                    coroutineScope {
+                        launch {
+                            detectTapGestures { tapOffset: androidx.compose.ui.geometry.Offset ->
+                                onMapTapped?.let { callback ->
+                                    val canvasW = size.width
+                                    val canvasH = size.height
+                                    val mapCenterX = canvasW / 2f + panOffsetX
+                                    val mapCenterY = canvasH / 2f + panOffsetY
+                                    val metersPerPixel = (2000f / zoomLevel) / 100f
+                                    val latDegreePerPixel = metersPerPixel / 111320.0
+                                    val lngDegreePerPixel = metersPerPixel / (111320.0 * kotlin.math.cos(Math.toRadians(centerLat)))
+                                    val dX = tapOffset.x - mapCenterX
+                                    val dY = mapCenterY - tapOffset.y
+                                    val tappedLat = centerLat + (dY * latDegreePerPixel)
+                                    val tappedLng = centerLng + (dX * lngDegreePerPixel)
+                                    callback.invoke(tappedLat, tappedLng)
+                                }
+                            }
+                        }
+                        launch {
+                            detectDragGestures { change, dragAmount ->
+                                change.consume()
+                                panOffsetX += dragAmount.x
+                                panOffsetY += dragAmount.y
+                            }
+                        }
                     }
                 }
         ) {
@@ -487,6 +522,61 @@ fun InteractiveMapView(
                     )
                     drawRoundRect(bgRect, 16f, 16f, bgPaint)
                     drawText(label, userPx.x, userPx.y + 42.dp.toPx() + 25f, paint)
+                }
+            }
+
+            // 6. Draw Destination Task Target Pin & Guidance Line
+            if (destinationTask != null) {
+                val destPx = geoToPixel(destinationTask.latitude, destinationTask.longitude)
+                val isArrived = destinationTask.status == "ARRIVED"
+
+                // Guidance line
+                if (currentPoint != null) {
+                    val userPx = geoToPixel(currentPoint.latitude, currentPoint.longitude)
+                    drawLine(
+                        color = if (isArrived) StatusGreen else Color(0xFF8B5CF6),
+                        start = userPx,
+                        end = destPx,
+                        strokeWidth = 3.dp.toPx(),
+                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(20f, 15f), 0f)
+                    )
+                }
+
+                // Target Circle
+                drawCircle(
+                    color = if (isArrived) StatusGreen else Color(0xFF7C3AED),
+                    radius = 16.dp.toPx(),
+                    center = destPx
+                )
+                drawCircle(
+                    color = Color.White,
+                    radius = 16.dp.toPx(),
+                    center = destPx,
+                    style = Stroke(width = 3.dp.toPx())
+                )
+
+                drawContext.canvas.nativeCanvas.apply {
+                    val paint = android.graphics.Paint().apply {
+                        color = android.graphics.Color.WHITE
+                        textSize = 28f
+                        isFakeBoldText = true
+                        textAlign = android.graphics.Paint.Align.CENTER
+                    }
+                    val bgPaint = android.graphics.Paint().apply {
+                        color = if (isArrived) android.graphics.Color.parseColor("#059669") else android.graphics.Color.parseColor("#7C3AED")
+                        style = android.graphics.Paint.Style.FILL
+                    }
+                    val label = if (isArrived) "✅ Tiba: ${destinationTask.destinationName}" else "🎯 ${destinationTask.destinationName} (~${destinationTask.estimatedMinutes}m)"
+                    val bounds = android.graphics.Rect()
+                    paint.getTextBounds(label, 0, label.length, bounds)
+                    val bgRect = android.graphics.RectF(
+                        destPx.x - bounds.width() / 2f - 16f,
+                        destPx.y - 22.dp.toPx() - 32f,
+                        destPx.x + bounds.width() / 2f + 16f,
+                        destPx.y - 22.dp.toPx() + 8f
+                    )
+                    drawRoundRect(bgRect, 14f, 14f, bgPaint)
+                    drawText(label, destPx.x, destPx.y - 22.dp.toPx() - 8f, paint)
                 }
             }
         }

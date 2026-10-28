@@ -36,10 +36,14 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.PauseCircle
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PinDrop
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -71,6 +75,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -91,6 +96,7 @@ import com.example.data.model.UserProfile
 import com.example.data.model.VehicleType
 import com.example.data.model.ZoneType
 import com.example.util.StopPointDetector
+import com.example.util.RoadNetworkEngine
 import com.example.ui.components.AdminUserChatSheet
 import com.example.ui.components.AppMapContainer
 import com.example.ui.components.InteractiveMapView
@@ -118,12 +124,27 @@ fun AdminDashboardScreen(
     val selectedUserId by viewModel.selectedUserId.collectAsState()
     val historyPoints by viewModel.targetUserHistory.collectAsState()
     val highlightedIndex by viewModel.highlightedPointIndex.collectAsState()
+    val activeUserTask by viewModel.activeUserTask.collectAsState()
 
     var dashboardTab by remember { mutableIntStateOf(0) } // 0 = Peta Armada, 1 = Visualisasi Rute & Grafik, 2 = Geofencing, 3 = Karyawan
     var showAddGeofenceDialog by remember { mutableStateOf(false) }
     var showAddEmployeeDialog by remember { mutableStateOf(false) }
     var userToEditVehicle by remember { mutableStateOf<UserProfile?>(null) }
     var chatUser by remember { mutableStateOf<UserProfile?>(null) }
+
+    // Destination Pinning & Stop Points state
+    var isPinningDestinationMode by remember { mutableStateOf(false) }
+    var showSetDestinationDialog by remember { mutableStateOf(false) }
+    var showStopPointsSheet by remember { mutableStateOf(false) }
+    var focusedGeoPoint by remember { mutableStateOf<org.osmdroid.util.GeoPoint?>(null) }
+    var destNameInput by remember { mutableStateOf("") }
+    var destNotesInput by remember { mutableStateOf("") }
+    var pendingDestinationLat by remember { mutableDoubleStateOf(-6.2088) }
+    var pendingDestinationLng by remember { mutableDoubleStateOf(106.8456) }
+
+    val detectedStops = remember(historyPoints) {
+        StopPointDetector.detectStopPoints(historyPoints, minDurationMinutes = 5)
+    }
 
     // Auto select first user if none selected
     val activeSelectedUser = users.find { it.userId == selectedUserId } ?: users.firstOrNull()
@@ -250,51 +271,82 @@ fun AdminDashboardScreen(
                 )
             }
 
-            when (dashboardTab) {
-                0 -> {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+            ) {
+                if (dashboardTab == 0) {
                     // TAB 0: FLEET MONITORING MAP
                     Column(modifier = Modifier.fillMaxSize()) {
-                        // User / Field Driver Selector Strip
-                        // Fleet Quick KPI & Driver Selector Strip
+                            // User / Field Driver Selector Strip (Clean, Solid & Elevated)
                         Surface(
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+                            color = MaterialTheme.colorScheme.surface,
+                            tonalElevation = 3.dp,
+                            shadowElevation = 3.dp,
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                                // Top mini stats
+                            Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+                                // Top mini stats (Status Armada Online / Standby)
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(horizontal = 14.dp, vertical = 2.dp),
+                                        .padding(horizontal = 2.dp, vertical = 2.dp),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
                                         text = "STATUS ARMADA",
-                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
                                         fontWeight = FontWeight.ExtraBold,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        color = GeoBluePrimary
                                     )
                                     val onlineCount = users.count { it.isSharingLocation }
-                                    Text(
-                                        text = "🟢 $onlineCount Online  •  ⚪ ${users.size - onlineCount} Standby",
-                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Surface(
+                                            shape = RoundedCornerShape(10.dp),
+                                            color = StatusGreen.copy(alpha = 0.15f)
+                                        ) {
+                                            Text(
+                                                text = "🟢 $onlineCount Online",
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                                                fontWeight = FontWeight.Bold,
+                                                color = StatusGreen
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Surface(
+                                            shape = RoundedCornerShape(10.dp),
+                                            color = Color.Gray.copy(alpha = 0.15f)
+                                        ) {
+                                            Text(
+                                                text = "⚪ ${users.size - onlineCount} Standby",
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
                                 }
 
+                                Spacer(modifier = Modifier.height(4.dp))
+
                                 LazyRow(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                                    modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     items(users) { usr ->
                                         val isSel = (usr.userId == activeSelectedUser?.userId)
                                         FilterChip(
                                             selected = isSel,
-                                            onClick = { viewModel.selectUser(usr.userId) },
+                                            onClick = {
+                                                viewModel.selectUser(usr.userId)
+                                                if (usr.lastLatitude != 0.0 && usr.lastLongitude != 0.0) {
+                                                    focusedGeoPoint = org.osmdroid.util.GeoPoint(usr.lastLatitude, usr.lastLongitude)
+                                                }
+                                            },
                                             label = {
                                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                                     Text(usr.vehicleType.iconEmoji, fontSize = 14.sp)
@@ -334,30 +386,90 @@ fun AdminDashboardScreen(
                             }
                         }
 
-                        // Map View showing selected user's position, route & geofences
-                        Box(modifier = Modifier.fillMaxSize()) {
+                        // Map View container with proper spacing
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
+                        ) {
                             AppMapContainer(
                                 currentPoint = currentSelectedPoint,
                                 routePoints = historyPoints,
                                 geofences = geofences,
+                                destinationTask = activeUserTask,
+                                focusedGeoPoint = focusedGeoPoint,
+                                showTopStatusPill = false,
+                                onMapTapped = if (isPinningDestinationMode) {
+                                    { lat, lng ->
+                                        pendingDestinationLat = lat
+                                        pendingDestinationLng = lng
+                                        isPinningDestinationMode = false
+                                        showSetDestinationDialog = true
+                                    }
+                                } else null,
                                 userLabel = if (activeSelectedUser?.hasFakeGpsAlert == true) "⚠️ ${activeSelectedUser.fullName} [FAKE GPS]" else activeSelectedUser?.fullName ?: "Armada",
                                 vehicleType = activeSelectedUser?.vehicleType ?: VehicleType.MOTORCYCLE,
                                 isLiveTracking = activeSelectedUser?.isSharingLocation ?: true,
                                 modifier = Modifier.fillMaxSize()
                             )
 
-                            // Quick Floating Driver Info & Chat Card
-                            activeSelectedUser?.let { selectedEmp ->
+                            // Floating Top Banner when Pinning Destination Mode is Active
+                            if (isPinningDestinationMode) {
                                 Card(
                                     modifier = Modifier
-                                        .align(Alignment.BottomCenter)
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                                    shape = RoundedCornerShape(18.dp),
-                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f)),
+                                        .align(Alignment.TopCenter)
+                                        .padding(top = 8.dp, start = 12.dp, end = 12.dp)
+                                        .fillMaxWidth(),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                                    shape = RoundedCornerShape(14.dp),
                                     elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
                                 ) {
-                                    Column(modifier = Modifier.padding(12.dp)) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                            Text("🎯", fontSize = 24.sp)
+                                            Spacer(modifier = Modifier.width(10.dp))
+                                            Column {
+                                                Text(
+                                                    text = "Klik Langsung di Peta!",
+                                                    style = MaterialTheme.typography.titleSmall,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                                )
+                                                Text(
+                                                    text = "Ketuk sembarang titik di peta untuk menaruh pin tujuan bagi ${activeSelectedUser?.fullName ?: "driver"}",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    fontSize = 11.sp,
+                                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
+                                                )
+                                            }
+                                        }
+                                        OutlinedButton(
+                                            onClick = { isPinningDestinationMode = false },
+                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                        ) {
+                                            Text("Batal", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Quick Floating Driver Info, Mission & Action Card (Docked cleanly at bottom below map)
+                        activeSelectedUser?.let { selectedEmp ->
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
                                             verticalAlignment = Alignment.CenterVertically,
@@ -427,7 +539,7 @@ fun AdminDashboardScreen(
                                                 OutlinedButton(
                                                     onClick = { userToEditVehicle = selectedEmp },
                                                     shape = RoundedCornerShape(10.dp),
-                                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
                                                 ) {
                                                     Text("Icon Pin", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                                 }
@@ -439,7 +551,7 @@ fun AdminDashboardScreen(
                                                     },
                                                     shape = RoundedCornerShape(10.dp),
                                                     colors = ButtonDefaults.buttonColors(containerColor = GeoBluePrimary),
-                                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                                                     modifier = Modifier.testTag("btn_tab0_chat_driver")
                                                 ) {
                                                     Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(15.dp))
@@ -448,13 +560,119 @@ fun AdminDashboardScreen(
                                                 }
                                             }
                                         }
+
+                                        // Active Destination Mission Status (if assigned)
+                                        activeUserTask?.let { task ->
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            Surface(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                shape = RoundedCornerShape(10.dp),
+                                                color = if (task.status == "ARRIVED") StatusGreen.copy(alpha = 0.12f) else GeoBluePrimary.copy(alpha = 0.08f),
+                                                border = BorderStroke(1.dp, if (task.status == "ARRIVED") StatusGreen else GeoBluePrimary.copy(alpha = 0.4f))
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.SpaceBetween
+                                                ) {
+                                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                                        Text(if (task.status == "ARRIVED") "✅" else "🎯", fontSize = 18.sp)
+                                                        Spacer(modifier = Modifier.width(8.dp))
+                                                        Column {
+                                                            Text(
+                                                                text = if (task.status == "ARRIVED") "Telah Tiba: ${task.destinationName}" else "Tujuan: ${task.destinationName}",
+                                                                style = MaterialTheme.typography.labelMedium,
+                                                                fontWeight = FontWeight.Bold,
+                                                                color = if (task.status == "ARRIVED") StatusGreen else MaterialTheme.colorScheme.onSurface
+                                                            )
+                                                            if (task.status == "ARRIVED") {
+                                                                val dur = task.actualDurationMinutes ?: 0
+                                                                val timeStr = task.arrivedAt?.let { SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(it)) } ?: "-"
+                                                                Text(
+                                                                    text = "Tiba jam $timeStr • Waktu tempuh: $dur menit",
+                                                                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                                                                    color = StatusGreen
+                                                                )
+                                                            } else {
+                                                                val distKm = String.format(Locale.US, "%.1f km", task.distanceMeters / 1000.0)
+                                                                Text(
+                                                                    text = "Jarak: $distKm • Estimasi: ~${task.estimatedMinutes} menit",
+                                                                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+
+                                                    if (task.status == "ASSIGNED") {
+                                                        TextButton(
+                                                            onClick = { viewModel.cancelDestinationTask(task.taskId) },
+                                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                                        ) {
+                                                            Text("Batalkan", color = StatusRed, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                        }
+                                                    } else if (task.status == "ARRIVED") {
+                                                        TextButton(
+                                                            onClick = {
+                                                                destNameInput = "Tujuan ${selectedEmp.fullName}"
+                                                                destNotesInput = ""
+                                                                isPinningDestinationMode = true
+                                                            },
+                                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                                        ) {
+                                                            Text("Tugas Baru", color = GeoBluePrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // Mission Pin & Stop Points Action Buttons Row
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Button(
+                                                onClick = {
+                                                    destNameInput = "Tujuan ${selectedEmp.fullName}"
+                                                    destNotesInput = ""
+                                                    isPinningDestinationMode = true
+                                                },
+                                                modifier = Modifier.weight(1f).testTag("btn_tab0_set_destination"),
+                                                shape = RoundedCornerShape(10.dp),
+                                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                                            ) {
+                                                Icon(Icons.Default.PinDrop, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text(
+                                                    if (activeUserTask != null && activeUserTask?.status == "ASSIGNED") "Ubah di Peta" else "Tandai di Peta",
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+
+                                            OutlinedButton(
+                                                onClick = { showStopPointsSheet = true },
+                                                modifier = Modifier.weight(1f).testTag("btn_tab0_view_stops"),
+                                                shape = RoundedCornerShape(10.dp),
+                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                                            ) {
+                                                Text("🛑", fontSize = 14.sp)
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text(
+                                                    "Titik Berhenti (${detectedStops.size})",
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
-                }
-                1 -> {
+                } else if (dashboardTab == 1) {
                     // TAB 1: ROUTE ANALYTICS & CHARTS
                     val scrollState = rememberScrollState()
                     Column(
@@ -604,8 +822,7 @@ fun AdminDashboardScreen(
 
                         Spacer(modifier = Modifier.height(24.dp))
                     }
-                }
-                2 -> {
+                } else if (dashboardTab == 2) {
                     // TAB 2: GEOFENCING MANAGEMENT & ALERT LOGS
                     LazyColumn(
                         modifier = Modifier
@@ -775,8 +992,7 @@ fun AdminDashboardScreen(
                             }
                         }
                     }
-                }
-                3 -> {
+                } else {
                     // TAB 3: EMPLOYEE MANAGEMENT
                     LazyColumn(
                         modifier = Modifier
@@ -1202,6 +1418,333 @@ fun AdminDashboardScreen(
             onDismiss = {
                 chatUser = null
                 viewModel.closeChat()
+            }
+        )
+    }
+
+    // Set Destination Dialog (Penugasan Titik Tujuan Driver)
+    if (showSetDestinationDialog && activeSelectedUser != null) {
+        val selectedEmp = activeSelectedUser
+        val currLat = currentSelectedPoint?.latitude ?: -6.2088
+        val currLng = currentSelectedPoint?.longitude ?: 106.8456
+        val distMeters = RoadNetworkEngine.calculateDistanceMeters(
+            currLat, currLng,
+            pendingDestinationLat, pendingDestinationLng
+        )
+        val speedKmh = when (selectedEmp.vehicleType) {
+            VehicleType.MOTORCYCLE -> 28.0
+            VehicleType.CAR -> 24.0
+            VehicleType.TRUCK -> 20.0
+            VehicleType.BICYCLE -> 14.0
+            VehicleType.WALK -> 4.5
+        }
+        val estimatedMinutes = ((distMeters / 1000.0) / speedKmh * 60.0).toInt().coerceAtLeast(1)
+
+        AlertDialog(
+            onDismissRequest = { showSetDestinationDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("🎯", fontSize = 24.sp)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text("Konfirmasi Tujuan Driver", fontWeight = FontWeight.Bold)
+                        Text(
+                            text = "Titik berhasil ditandai dari peta!",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = StatusGreen
+                        )
+                    }
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    // Driver & ETA Summary Card
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = GeoBluePrimary.copy(alpha = 0.08f),
+                        border = BorderStroke(1.dp, GeoBluePrimary.copy(alpha = 0.3f))
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Driver: ${selectedEmp.fullName}",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = GeoBluePrimary
+                                )
+                                Text(
+                                    text = "${selectedEmp.vehicleType.iconEmoji} ${selectedEmp.vehicleType.label}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Jarak ke Titik Pin:", style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    String.format(Locale.US, "%.1f km", distMeters / 1000.0),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Estimasi Waktu Sampai:", style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    "~$estimatedMinutes menit",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = StatusGreen
+                                )
+                            }
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = destNameInput,
+                        onValueChange = { destNameInput = it },
+                        label = { Text("Nama Lokasi Tujuan") },
+                        placeholder = { Text("Contoh: Gudang Logistik / Klien / Kantor") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("input_destination_name")
+                    )
+
+                    // Preset Quick Names
+                    Text("Pilih Nama Cepat (Preset):", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { destNameInput = "Kantor Pusat Sudirman" },
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Kantor", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                        OutlinedButton(
+                            onClick = { destNameInput = "Gudang Logistik" },
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Gudang", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                        OutlinedButton(
+                            onClick = { destNameInput = "Lokasi Klien" },
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Klien", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = destNotesInput,
+                        onValueChange = { destNotesInput = it },
+                        label = { Text("Catatan / Instruksi (Opsional)") },
+                        placeholder = { Text("Contoh: Antar berkas atau hubungi saat tiba") },
+                        maxLines = 2,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("input_destination_notes")
+                    )
+
+                    // Button to re-tap map if needed
+                    OutlinedButton(
+                        onClick = {
+                            showSetDestinationDialog = false
+                            isPinningDestinationMode = true
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(Icons.Default.Place, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("📍 Ubah Titik Pin di Peta (Ketuk Ulang)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val name = if (destNameInput.isNotBlank()) destNameInput else "Titik Tujuan Tugas"
+                        viewModel.assignDestinationTask(
+                            userId = selectedEmp.userId,
+                            destinationName = name,
+                            latitude = pendingDestinationLat,
+                            longitude = pendingDestinationLng,
+                            notes = destNotesInput
+                        )
+                        showSetDestinationDialog = false
+                    },
+                    modifier = Modifier.testTag("btn_confirm_assign_task")
+                ) {
+                    Text("🚀 Kirim Tugas ke Driver", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSetDestinationDialog = false }) {
+                    Text("Batal")
+                }
+            }
+        )
+    }
+
+    // Stop Points Inspection Dialog / Sheet
+    if (showStopPointsSheet && activeSelectedUser != null) {
+        val selectedEmp = activeSelectedUser
+        AlertDialog(
+            onDismissRequest = { showStopPointsSheet = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("🛑", fontSize = 22.sp)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text("Titik Berhenti Driver", fontWeight = FontWeight.Bold)
+                        Text(
+                            text = "${selectedEmp.fullName} (${selectedEmp.unitCode}) • ${detectedStops.size} Titik",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(350.dp)
+                ) {
+                    Text(
+                        text = "Lokasi terdeteksi di mana driver berhenti 5 menit atau lebih:",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    if (detectedStops.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("🟢", fontSize = 32.sp)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    "Tidak Ada Titik Berhenti Lama",
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.titleSmall
+                                )
+                                Text(
+                                    "Armada bergerak lancar tanpa henti melebihi 5 menit pada rute ini.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color.Gray,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                    modifier = Modifier.padding(horizontal = 16.dp)
+                                )
+                            }
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(detectedStops) { stop ->
+                                Surface(
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = StatusRed.copy(alpha = 0.08f),
+                                    border = BorderStroke(1.dp, StatusRed.copy(alpha = 0.3f)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(32.dp)
+                                                    .background(StatusRed, CircleShape),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.Timer,
+                                                    contentDescription = null,
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.width(10.dp))
+                                            Column {
+                                                Text(
+                                                    text = "Berhenti: ${stop.durationMinutes} Menit",
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 12.sp,
+                                                    color = StatusRed
+                                                )
+                                                Text(
+                                                    text = "${StopPointDetector.formatTime(stop.startTimestamp)} - ${StopPointDetector.formatTime(stop.endTimestamp)}",
+                                                    fontSize = 11.sp,
+                                                    color = MaterialTheme.colorScheme.onSurface
+                                                )
+                                                Text(
+                                                    text = String.format(Locale.US, "%.5f, %.5f", stop.latitude, stop.longitude),
+                                                    fontSize = 10.sp,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
+
+                                        Button(
+                                            onClick = {
+                                                focusedGeoPoint = org.osmdroid.util.GeoPoint(stop.latitude, stop.longitude)
+                                                showStopPointsSheet = false
+                                            },
+                                            shape = RoundedCornerShape(8.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = StatusRed),
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                        ) {
+                                            Text("Pusatkan", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = { showStopPointsSheet = false }) {
+                    Text("Tutup")
+                }
             }
         )
     }

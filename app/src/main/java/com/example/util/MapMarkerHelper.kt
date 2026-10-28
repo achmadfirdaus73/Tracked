@@ -110,6 +110,62 @@ object MapMarkerHelper {
     }
 
     /**
+     * Creates a destination task pin marker (🎯 Target pin or ✅ Arrived pin).
+     */
+    fun createDestinationMarkerDrawable(
+        context: Context,
+        destinationName: String,
+        isArrived: Boolean
+    ): Drawable {
+        val width = 160
+        val height = 150
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+        // Drop shadow at pointer tip
+        paint.color = Color.argb(60, 0, 0, 0)
+        canvas.drawCircle(width / 2f, height - 12f, 16f, paint)
+
+        // Pointer triangle pointing to coordinate
+        val pointer = Path().apply {
+            moveTo(width / 2f, height - 8f)
+            lineTo(width / 2f - 20f, 75f)
+            lineTo(width / 2f + 20f, 75f)
+            close()
+        }
+        val mainColor = if (isArrived) Color.parseColor("#059669") else Color.parseColor("#7C3AED") // Emerald if arrived, Purple for destination
+        paint.color = mainColor
+        canvas.drawPath(pointer, paint)
+
+        // Central Circle
+        canvas.drawCircle(width / 2f, 52f, 44f, paint)
+
+        // Outer white ring
+        paint.color = Color.WHITE
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 5f
+        canvas.drawCircle(width / 2f, 52f, 44f, paint)
+
+        // Inner icon & text
+        paint.style = Paint.Style.FILL
+        paint.textAlign = Paint.Align.CENTER
+        paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+
+        paint.textSize = 28f
+        val iconText = if (isArrived) "✅" else "🎯"
+        canvas.drawText(iconText, width / 2f, 48f, paint)
+
+        paint.textSize = 15f
+        paint.color = Color.WHITE
+        val label = if (isArrived) "TIBA" else "TUJUAN"
+        canvas.drawText(label, width / 2f, 72f, paint)
+
+        return BitmapDrawable(context.resources, bitmap)
+    }
+
+    /**
      * Creates a high-definition, professional navigation marker puck with dynamic compass radar beam
      * and crisp custom vector silhouette for Motor, Mobil, Sepeda, Truk, and Pejalan Kaki.
      */

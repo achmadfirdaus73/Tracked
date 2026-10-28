@@ -8,6 +8,7 @@ import com.example.data.local.AppDatabase
 import com.example.data.model.AuthSession
 import com.example.data.model.ChatMessage
 import com.example.data.model.CompanyProfile
+import com.example.data.model.DestinationTask
 import com.example.data.model.GeofenceAlert
 import com.example.data.model.GeofenceZone
 import com.example.data.model.LocationPoint
@@ -119,6 +120,25 @@ class MainViewModel(private val application: Application) : ViewModel() {
             flowOf(emptyList())
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // Active tasks for company & selected user
+    val companyTasks: StateFlow<List<DestinationTask>> = _session.flatMapLatest { sess ->
+        when (sess) {
+            is AuthSession.AdminSession -> repository.observeTasksForCompany(sess.company.companyId)
+            is AuthSession.UserSession -> repository.observeTasksForCompany(sess.user.companyId)
+            else -> flowOf(emptyList())
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val activeUserTask: StateFlow<DestinationTask?> = _selectedUserId.flatMapLatest { uid ->
+        val effectiveUid = uid ?: (_session.value as? AuthSession.UserSession)?.user?.userId
+        if (effectiveUid != null) {
+            repository.observeActiveTaskForUser(effectiveUid)
+        } else {
+            flowOf(null)
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     // 1-on-1 Chat Thread State (Admin <-> Employee). Users can ONLY chat with Admin.
     private val _activeChatUserId = MutableStateFlow<String?>(null)
@@ -273,6 +293,7 @@ class MainViewModel(private val application: Application) : ViewModel() {
                     sessionId = newSessionId,
                     onPointRecorded = { pt ->
                         _currentPoint.value = pt
+                        checkDestinationArrival(pt)
                     },
                     onAlertTriggered = { alert ->
                         _activeAlertBanner.value = alert
@@ -281,6 +302,89 @@ class MainViewModel(private val application: Application) : ViewModel() {
             } else {
                 locationEngine.stopTracking()
             }
+        }
+    }
+
+    private fun checkDestinationArrival(pt: LocationPoint) {
+        val task = activeUserTask.value ?: return
+        if (task.status == "ASSIGNED") {
+            val dist = com.example.util.GeofenceEngine.calculateDistanceMeters(
+                pt.latitude, pt.longitude,
+                task.latitude, task.longitude
+            )
+            // If within 45 meters, user has reached destination pin!
+            if (dist <= 45.0) {
+                val actualMinutes = maxOf(1, ((System.currentTimeMillis() - task.assignedAt) / 60000).toInt())
+                viewModelScope.launch {
+                    repository.markTaskArrived(task.taskId, System.currentTimeMillis(), actualMinutes)
+                    _successMessage.value = "🎉 Anda telah tiba di tujuan '${task.destinationName}'! (Waktu tempuh: $actualMinutes menit)"
+
+                    val arrivalAlert = GeofenceAlert(
+                        companyId = task.companyId,
+                        userId = task.userId,
+                        userName = (_session.value as? AuthSession.UserSession)?.user?.fullName ?: "Driver",
+                        geofenceName = task.destinationName,
+                        eventType = "TIBA_TUJUAN",
+                        timestamp = System.currentTimeMillis(),
+                        latitude = pt.latitude,
+                        longitude = pt.longitude,
+                        description = "Driver telah sampai di titik tujuan '${task.destinationName}' dalam waktu $actualMinutes menit"
+                    )
+                    repository.recordGeofenceAlert(arrivalAlert)
+                }
+            }
+        }
+    }
+
+    fun assignDestinationTask(
+        userId: String,
+        destinationName: String,
+        latitude: Double,
+        longitude: Double,
+        notes: String = ""
+    ) {
+        val sess = _session.value
+        val companyId = when (sess) {
+            is AuthSession.AdminSession -> sess.company.companyId
+            is AuthSession.UserSession -> sess.user.companyId
+            else -> return
+        }
+
+        viewModelScope.launch {
+            val user = companyUsers.value.find { it.userId == userId }
+            val driverLat = user?.lastLatitude ?: -6.2088
+            val driverLng = user?.lastLongitude ?: 106.8456
+            val distM = com.example.util.GeofenceEngine.calculateDistanceMeters(driverLat, driverLng, latitude, longitude).toFloat()
+            val speed = if ((user?.lastSpeedKmh ?: 0f) > 5f) user!!.lastSpeedKmh else 25f
+            val etaMinutes = maxOf(1, ((distM / 1000f) / speed * 60).toInt())
+
+            val task = DestinationTask(
+                taskId = UUID.randomUUID().toString(),
+                companyId = companyId,
+                userId = userId,
+                destinationName = destinationName.trim(),
+                latitude = latitude,
+                longitude = longitude,
+                assignedAt = System.currentTimeMillis(),
+                estimatedMinutes = etaMinutes,
+                distanceMeters = distM,
+                status = "ASSIGNED",
+                notes = notes.trim()
+            )
+
+            val result = repository.assignDestinationTask(task)
+            if (result.isSuccess) {
+                _successMessage.value = "🎯 Titik tujuan '${task.destinationName}' berhasil ditandai & dikirim ke driver! (Estimasi: ~$etaMinutes mnt)"
+            } else {
+                _errorMessage.value = "Gagal menugaskan titik tujuan"
+            }
+        }
+    }
+
+    fun cancelDestinationTask(taskId: String) {
+        viewModelScope.launch {
+            repository.cancelTask(taskId)
+            _successMessage.value = "Tugas titik tujuan dibatalkan."
         }
     }
 

@@ -2,6 +2,7 @@ package com.example.data.repository
 
 import com.example.data.model.ChatMessage
 import com.example.data.model.CompanyProfile
+import com.example.data.model.DestinationTask
 import com.example.data.model.GeofenceAlert
 import com.example.data.model.GeofenceZone
 import com.example.data.model.LocationPoint
@@ -568,5 +569,112 @@ class TrackingRepository {
                 trySend(messages)
             }
         awaitClose { listener.remove() }
+    }
+
+    fun observeTasksForCompany(companyId: String): Flow<List<DestinationTask>> = callbackFlow {
+        val listener = firestore.collection("destination_tasks")
+            .whereEqualTo("companyId", companyId)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
+                val tasks = snapshot?.documents?.mapNotNull { doc ->
+                    DestinationTask(
+                        taskId = doc.getString("taskId") ?: doc.id,
+                        companyId = doc.getString("companyId") ?: companyId,
+                        userId = doc.getString("userId") ?: "",
+                        destinationName = doc.getString("destinationName") ?: "",
+                        latitude = doc.getDouble("latitude") ?: 0.0,
+                        longitude = doc.getDouble("longitude") ?: 0.0,
+                        assignedAt = doc.getLong("assignedAt") ?: System.currentTimeMillis(),
+                        estimatedMinutes = doc.getLong("estimatedMinutes")?.toInt() ?: 0,
+                        distanceMeters = doc.getDouble("distanceMeters")?.toFloat() ?: 0f,
+                        status = doc.getString("status") ?: "ASSIGNED",
+                        arrivedAt = doc.getLong("arrivedAt"),
+                        actualDurationMinutes = doc.getLong("actualDurationMinutes")?.toInt(),
+                        notes = doc.getString("notes") ?: ""
+                    )
+                }?.sortedByDescending { it.assignedAt } ?: emptyList()
+                trySend(tasks)
+            }
+        awaitClose { listener.remove() }
+    }
+
+    fun observeActiveTaskForUser(userId: String): Flow<DestinationTask?> = callbackFlow {
+        val listener = firestore.collection("destination_tasks")
+            .whereEqualTo("userId", userId)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    trySend(null)
+                    return@addSnapshotListener
+                }
+                val activeTask = snapshot?.documents?.mapNotNull { doc ->
+                    DestinationTask(
+                        taskId = doc.getString("taskId") ?: doc.id,
+                        companyId = doc.getString("companyId") ?: "",
+                        userId = doc.getString("userId") ?: userId,
+                        destinationName = doc.getString("destinationName") ?: "",
+                        latitude = doc.getDouble("latitude") ?: 0.0,
+                        longitude = doc.getDouble("longitude") ?: 0.0,
+                        assignedAt = doc.getLong("assignedAt") ?: System.currentTimeMillis(),
+                        estimatedMinutes = doc.getLong("estimatedMinutes")?.toInt() ?: 0,
+                        distanceMeters = doc.getDouble("distanceMeters")?.toFloat() ?: 0f,
+                        status = doc.getString("status") ?: "ASSIGNED",
+                        arrivedAt = doc.getLong("arrivedAt"),
+                        actualDurationMinutes = doc.getLong("actualDurationMinutes")?.toInt(),
+                        notes = doc.getString("notes") ?: ""
+                    )
+                }?.filter { it.status == "ASSIGNED" || (it.status == "ARRIVED" && (System.currentTimeMillis() - (it.arrivedAt ?: 0L)) < 30 * 60 * 1000L) }
+                ?.maxByOrNull { it.assignedAt }
+
+                trySend(activeTask)
+            }
+        awaitClose { listener.remove() }
+    }
+
+    suspend fun assignDestinationTask(task: DestinationTask): Result<Unit> {
+        return try {
+            val taskData = mapOf(
+                "taskId" to task.taskId,
+                "companyId" to task.companyId,
+                "userId" to task.userId,
+                "destinationName" to task.destinationName,
+                "latitude" to task.latitude,
+                "longitude" to task.longitude,
+                "assignedAt" to task.assignedAt,
+                "estimatedMinutes" to task.estimatedMinutes,
+                "distanceMeters" to task.distanceMeters,
+                "status" to task.status,
+                "notes" to task.notes
+            )
+            firestore.collection("destination_tasks").document(task.taskId).set(taskData).await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun markTaskArrived(taskId: String, arrivedAt: Long, actualDurationMinutes: Int): Result<Unit> {
+        return try {
+            val updates = mapOf<String, Any>(
+                "status" to "ARRIVED",
+                "arrivedAt" to arrivedAt,
+                "actualDurationMinutes" to actualDurationMinutes
+            )
+            firestore.collection("destination_tasks").document(taskId).update(updates).await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun cancelTask(taskId: String): Result<Unit> {
+        return try {
+            firestore.collection("destination_tasks").document(taskId).update("status", "CANCELLED").await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 }

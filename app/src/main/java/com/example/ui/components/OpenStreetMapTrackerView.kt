@@ -62,6 +62,9 @@ import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
+import com.example.data.model.DestinationTask
+import org.osmdroid.events.MapEventsReceiver
+import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Polygon
 import org.osmdroid.views.overlay.Polyline
 
@@ -71,12 +74,15 @@ fun OpenStreetMapTrackerView(
     routePoints: List<LocationPoint>,
     geofences: List<GeofenceZone>,
     modifier: Modifier = Modifier,
+    destinationTask: DestinationTask? = null,
     userLabel: String = "User",
     vehicleType: VehicleType = VehicleType.MOTORCYCLE,
     isLiveTracking: Boolean = true,
     compassHeading: Float = 0f,
     isUserMode: Boolean = false,
     showTopStatusPill: Boolean = !isUserMode,
+    focusedGeoPoint: GeoPoint? = null,
+    onMapTapped: ((Double, Double) -> Unit)? = null,
     onMapCenterRequested: () -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -119,6 +125,13 @@ fun OpenStreetMapTrackerView(
         }
     }
 
+    // Focus on specific location if requested (e.g. tapping a stop point or recenter)
+    LaunchedEffect(focusedGeoPoint) {
+        if (focusedGeoPoint != null) {
+            mapView.controller.animateTo(focusedGeoPoint)
+        }
+    }
+
     // Map-Matching: Asynchronously stitch consecutive coordinates along actual OSM road geometry PER SEGMENT
     LaunchedEffect(routeSegments) {
         if (routeSegments.isNotEmpty()) {
@@ -139,14 +152,13 @@ fun OpenStreetMapTrackerView(
         }
     }
 
-    // Auto-center camera when user coordinates change
+    // Camera centering behavior:
+    // In User Mode (driver navigation): Keep camera centered on vehicle position.
+    // In Admin Mode: The camera NEVER auto-centers or moves on its own while inspecting/panning!
+    // Centering in Admin mode is strictly user-driven (via focusedGeoPoint, chip selection, or recenter button).
     LaunchedEffect(currentPoint?.latitude, currentPoint?.longitude) {
-        if (currentPoint != null) {
-            if (isUserMode && isLiveTracking) {
-                mapView.controller.animateTo(GeoPoint(currentPoint.latitude, currentPoint.longitude))
-            } else {
-                mapView.controller.animateTo(GeoPoint(currentPoint.latitude, currentPoint.longitude))
-            }
+        if (currentPoint != null && isUserMode && isLiveTracking) {
+            mapView.controller.animateTo(GeoPoint(currentPoint.latitude, currentPoint.longitude))
         }
     }
 
@@ -162,6 +174,21 @@ fun OpenStreetMapTrackerView(
             factory = { mapView },
             update = { map ->
                 map.overlays.clear()
+
+                // Tap event receiver for setting destination pin directly on the map
+                if (onMapTapped != null) {
+                    val receiver = object : MapEventsReceiver {
+                        override fun singleTapConfirmedHelper(p: GeoPoint): Boolean {
+                            onMapTapped.invoke(p.latitude, p.longitude)
+                            return true
+                        }
+                        override fun longPressHelper(p: GeoPoint): Boolean {
+                            onMapTapped.invoke(p.latitude, p.longitude)
+                            return true
+                        }
+                    }
+                    map.overlays.add(MapEventsOverlay(receiver))
+                }
 
                 // 1. Render Geofence circles on OpenStreetMap
                 for (fence in geofences) {
@@ -259,6 +286,37 @@ fun OpenStreetMapTrackerView(
                         setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                     }
                     map.overlays.add(userMarker)
+                }
+
+                // 4. Render Destination Task Target Pin & Guidance Line
+                if (destinationTask != null) {
+                    val destGeo = GeoPoint(destinationTask.latitude, destinationTask.longitude)
+                    val isArrived = destinationTask.status == "ARRIVED"
+
+                    // Guide Line from current vehicle to destination
+                    if (currentPoint != null) {
+                        val guideLine = Polyline(map).apply {
+                            setPoints(listOf(GeoPoint(currentPoint.latitude, currentPoint.longitude), destGeo))
+                            outlinePaint.color = if (isArrived) android.graphics.Color.parseColor("#10B981") else android.graphics.Color.parseColor("#7C3AED")
+                            outlinePaint.strokeWidth = 6f
+                            outlinePaint.pathEffect = android.graphics.DashPathEffect(floatArrayOf(20f, 15f), 0f)
+                        }
+                        map.overlays.add(guideLine)
+                    }
+
+                    // Destination Target Marker
+                    val destMarker = Marker(map).apply {
+                        position = destGeo
+                        icon = MapMarkerHelper.createDestinationMarkerDrawable(context, destinationTask.destinationName, isArrived)
+                        title = "🎯 Tujuan: ${destinationTask.destinationName}"
+                        snippet = if (isArrived) {
+                            "✅ Telah Tiba dalam ${destinationTask.actualDurationMinutes ?: 0} menit"
+                        } else {
+                            "Estimasi: ~${destinationTask.estimatedMinutes} menit • ${destinationTask.notes.ifBlank { "Tugas Rute" }}"
+                        }
+                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                    }
+                    map.overlays.add(destMarker)
                 }
 
                 map.invalidate()
