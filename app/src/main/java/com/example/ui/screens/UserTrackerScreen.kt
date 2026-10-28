@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.GpsFixed
 import androidx.compose.material.icons.filled.GpsOff
 import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.PinDrop
 import androidx.compose.material.icons.filled.Route
 import androidx.compose.material.icons.filled.Security
@@ -91,7 +92,8 @@ import kotlinx.coroutines.delay
 fun UserTrackerScreen(
     user: UserProfile,
     viewModel: MainViewModel,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onEnterPip: () -> Unit = {}
 ) {
     val isSharing by viewModel.isSharingLocation.collectAsState()
     val currentPt by viewModel.currentPoint.collectAsState()
@@ -174,6 +176,26 @@ fun UserTrackerScreen(
                     }
                 },
                 actions = {
+                    // Picture-in-Picture (PiP) Floating Window Button
+                    IconButton(
+                        onClick = onEnterPip,
+                        modifier = Modifier.testTag("btn_topbar_enter_pip")
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = GeoBluePrimary.copy(alpha = 0.12f),
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.PictureInPictureAlt,
+                                    contentDescription = "Jendela Pop-up Mengambang (PiP)",
+                                    tint = GeoBluePrimary,
+                                    modifier = Modifier.size(19.dp)
+                                )
+                            }
+                        }
+                    }
                     // Chat Admin Direct Button
                     IconButton(
                         onClick = {
@@ -545,6 +567,30 @@ fun UserTrackerScreen(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "Hubungi Admin / Dispatcher",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Floating Mini-Window (PiP) Mode Button (Google Maps-like floating window)
+                    OutlinedButton(
+                        onClick = onEnterPip,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("btn_enter_pip_mode"),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = GeoBluePrimary
+                        ),
+                        border = androidx.compose.foundation.BorderStroke(1.2.dp, GeoBluePrimary.copy(alpha = 0.5f))
+                    ) {
+                        Icon(Icons.Default.PictureInPictureAlt, contentDescription = null, modifier = Modifier.size(19.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Buka Pop-up Jendela (PiP)",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold
                         )

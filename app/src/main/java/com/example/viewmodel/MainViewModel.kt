@@ -30,19 +30,29 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 
 class MainViewModel(private val application: Application) : ViewModel() {
-    init {
-        com.example.util.FirebaseInitializer.init(application)
-    }
-
     val repository = TrackingRepository()
     val locationEngine = LocationEngine(application, repository, viewModelScope)
 
-    private val _session = MutableStateFlow<AuthSession>(AppSessionManager.currentSession)
+    private val _session = MutableStateFlow<AuthSession>(
+        if (AppSessionManager.currentSession !is AuthSession.None) {
+            AppSessionManager.currentSession
+        } else {
+            AppSessionManager.init(application)
+        }
+    )
     val session: StateFlow<AuthSession> = _session.asStateFlow()
+
+    init {
+        com.example.util.FirebaseInitializer.init(application)
+        val current = _session.value
+        if (current is AuthSession.UserSession && current.user.isSharingLocation) {
+            toggleLocationSharing(true)
+        }
+    }
 
     private fun updateSession(newSession: AuthSession) {
         _session.value = newSession
-        AppSessionManager.setSession(newSession)
+        AppSessionManager.saveSession(application, newSession)
     }
 
     private val _isLoading = MutableStateFlow(false)
@@ -390,8 +400,8 @@ class MainViewModel(private val application: Application) : ViewModel() {
         _isSharingLocation.value = false
         _currentPoint.value = null
         _selectedUserId.value = null
-        updateSession(AuthSession.None)
-        AppSessionManager.clear()
+        _session.value = AuthSession.None
+        AppSessionManager.clearSession(application)
     }
 
     override fun onCleared() {

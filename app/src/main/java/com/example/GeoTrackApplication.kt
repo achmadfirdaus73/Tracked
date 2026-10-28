@@ -7,5 +7,6 @@ class GeoTrackApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         FirebaseInitializer.init(this)
+        com.example.viewmodel.AppSessionManager.init(this)
     }
 }
