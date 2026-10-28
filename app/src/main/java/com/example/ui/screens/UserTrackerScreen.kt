@@ -105,6 +105,7 @@ fun UserTrackerScreen(
     val context = LocalContext.current
     var realBattery by remember { mutableStateOf(BatteryHelper.getBatteryStatus(context)) }
     var showChatSheet by remember { mutableStateOf(false) }
+    var showTaskDialog by remember { mutableStateOf(false) }
 
     // Read real-time phone compass orientation (azimuth 0-360°)
     val compassHeading by rememberCompassHeading(enabled = true)
@@ -194,6 +195,35 @@ fun UserTrackerScreen(
                                     tint = GeoBluePrimary,
                                     modifier = Modifier.size(19.dp)
                                 )
+                            }
+                        }
+                    }
+                    // Destination Task Notification Icon Button
+                    if (activeTask != null) {
+                        IconButton(
+                            onClick = { showTaskDialog = true },
+                            modifier = Modifier.testTag("btn_topbar_task_notif")
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (activeTask?.status == "ARRIVED") StatusGreen.copy(alpha = 0.18f) else Color(0xFF7C3AED).copy(alpha = 0.18f),
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.PinDrop,
+                                        contentDescription = "Notifikasi Tugas Tujuan",
+                                        tint = if (activeTask?.status == "ARRIVED") StatusGreen else Color(0xFF7C3AED),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .padding(top = 2.dp, end = 2.dp)
+                                            .size(8.dp)
+                                            .background(if (activeTask?.status == "ARRIVED") StatusGreen else StatusRed, CircleShape)
+                                    )
+                                }
                             }
                         }
                     }
@@ -333,46 +363,7 @@ fun UserTrackerScreen(
                 }
             }
 
-            // 2b. Destination Mission Banner for Driver
-            activeTask?.let { task ->
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 4.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    color = if (task.status == "ARRIVED") StatusGreen.copy(alpha = 0.15f) else Color(0xFF7C3AED).copy(alpha = 0.15f),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, if (task.status == "ARRIVED") StatusGreen else Color(0xFF7C3AED))
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(if (task.status == "ARRIVED") "✅" else "🎯", fontSize = 20.sp)
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = if (task.status == "ARRIVED") "Tiba di Tujuan: ${task.destinationName}" else "Tugas Tujuan: ${task.destinationName}",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp,
-                                color = if (task.status == "ARRIVED") StatusGreen else Color(0xFF6D28D9)
-                            )
-                            if (task.status == "ARRIVED") {
-                                Text(
-                                    text = "🎉 Anda telah sampai di lokasi tujuan dalam waktu ${task.actualDurationMinutes ?: 0} menit",
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            } else {
-                                Text(
-                                    text = "Estimasi: ~${task.estimatedMinutes} menit • ${task.notes.ifBlank { "Ikuti rute penunjuk arah di peta" }}",
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-                }
-            }
+
 
             // 3. Map Container with Interactive HUD
             Box(
@@ -707,10 +698,67 @@ fun UserTrackerScreen(
             }
         )
     }
+    // Task Notification Dialog (Shows details when notification icon is tapped)
+    if (showTaskDialog && activeTask != null) {
+        val task = activeTask!!
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showTaskDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(if (task.status == "ARRIVED") "✅" else "🎯", fontSize = 22.sp)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = if (task.status == "ARRIVED") "Telah Tiba di Tujuan" else "Tugas Rute Tujuan",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                }
+            },
+            text = {
+                Column {
+                    Text(
+                        text = "Lokasi Tujuan: ${task.destinationName}",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    if (task.status == "ARRIVED") {
+                        Text(
+                            text = "🎉 Anda telah sampai di titik lokasi tujuan!\nWaktu tempuh: ${task.actualDurationMinutes ?: 0} menit",
+                            fontSize = 12.sp,
+                            color = StatusGreen,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    } else {
+                        val distKm = String.format(java.util.Locale.US, "%.1f km", task.distanceMeters / 1000.0)
+                        Text(
+                            text = "Estimasi Waktu: ~${task.estimatedMinutes} menit\nJarak Tempuh: $distKm",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (task.notes.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "Catatan Admin: ${task.notes}",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = { showTaskDialog = false }) {
+                    Text("Tutup", fontWeight = FontWeight.Bold)
+                }
+            }
+        )
+    }
 }
 
 @Composable
-private fun QuickMetricCard(
+fun QuickMetricCard(
     label: String,
     value: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,

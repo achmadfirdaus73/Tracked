@@ -83,6 +83,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -196,6 +197,23 @@ fun AdminDashboardScreen(
                     }
                 },
                 actions = {
+                    // Fleet Status Pill (Online / Standby Counts moved to TopAppBar)
+                    val onlineCount = users.count { it.isSharingLocation }
+                    val standbyCount = users.size - onlineCount
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("🟢 $onlineCount", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = StatusGreen)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("⚪ $standbyCount", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(4.dp))
                     IconButton(
                         onClick = { viewModel.logout() },
                         modifier = Modifier.testTag("btn_admin_logout")
@@ -275,124 +293,12 @@ fun AdminDashboardScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
+                    .clipToBounds()
             ) {
                 if (dashboardTab == 0) {
                     // TAB 0: FLEET MONITORING MAP
-                    Column(modifier = Modifier.fillMaxSize()) {
-                            // User / Field Driver Selector Strip (Clean, Solid & Elevated)
-                        Surface(
-                            color = MaterialTheme.colorScheme.surface,
-                            tonalElevation = 3.dp,
-                            shadowElevation = 3.dp,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
-                                // Top mini stats (Status Armada Online / Standby)
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 2.dp, vertical = 2.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = "STATUS ARMADA",
-                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
-                                        fontWeight = FontWeight.ExtraBold,
-                                        color = GeoBluePrimary
-                                    )
-                                    val onlineCount = users.count { it.isSharingLocation }
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Surface(
-                                            shape = RoundedCornerShape(10.dp),
-                                            color = StatusGreen.copy(alpha = 0.15f)
-                                        ) {
-                                            Text(
-                                                text = "🟢 $onlineCount Online",
-                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
-                                                fontWeight = FontWeight.Bold,
-                                                color = StatusGreen
-                                            )
-                                        }
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Surface(
-                                            shape = RoundedCornerShape(10.dp),
-                                            color = Color.Gray.copy(alpha = 0.15f)
-                                        ) {
-                                            Text(
-                                                text = "⚪ ${users.size - onlineCount} Standby",
-                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
-                                                fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.height(4.dp))
-
-                                LazyRow(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    items(users) { usr ->
-                                        val isSel = (usr.userId == activeSelectedUser?.userId)
-                                        FilterChip(
-                                            selected = isSel,
-                                            onClick = {
-                                                viewModel.selectUser(usr.userId)
-                                                if (usr.lastLatitude != 0.0 && usr.lastLongitude != 0.0) {
-                                                    focusedGeoPoint = org.osmdroid.util.GeoPoint(usr.lastLatitude, usr.lastLongitude)
-                                                }
-                                            },
-                                            label = {
-                                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                                    Text(usr.vehicleType.iconEmoji, fontSize = 14.sp)
-                                                    Spacer(modifier = Modifier.width(4.dp))
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .size(7.dp)
-                                                            .background(
-                                                                if (usr.hasFakeGpsAlert) StatusRed
-                                                                else if (usr.isSharingLocation) StatusGreen
-                                                                else Color.Gray,
-                                                                CircleShape
-                                                            )
-                                                    )
-                                                    Spacer(modifier = Modifier.width(5.dp))
-                                                    Text(
-                                                        text = if (usr.hasFakeGpsAlert) "⚠️ ${usr.fullName}" else usr.fullName,
-                                                        fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
-                                                        fontSize = 12.sp
-                                                    )
-                                                    Spacer(modifier = Modifier.width(4.dp))
-                                                    Text(
-                                                        text = "${usr.batteryLevel}%",
-                                                        fontSize = 10.sp,
-                                                        color = if (isSel) Color.White.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant
-                                                    )
-                                                }
-                                            },
-                                            colors = FilterChipDefaults.filterChipColors(
-                                                selectedContainerColor = if (usr.hasFakeGpsAlert) StatusRed else GeoBluePrimary,
-                                                selectedLabelColor = Color.White
-                                            ),
-                                            modifier = Modifier.testTag("chip_user_${usr.userId}")
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        // Map View container with proper spacing
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth()
-                        ) {
-                            AppMapContainer(
+                    Box(modifier = Modifier.fillMaxSize().clipToBounds()) {
+                        AppMapContainer(
                                 currentPoint = currentSelectedPoint,
                                 routePoints = historyPoints,
                                 geofences = geofences,
@@ -420,9 +326,10 @@ fun AdminDashboardScreen(
                                         .align(Alignment.TopCenter)
                                         .padding(top = 8.dp, start = 12.dp, end = 12.dp)
                                         .fillMaxWidth(),
-                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.88f)),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
                                     shape = RoundedCornerShape(14.dp),
-                                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                                    elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
                                 ) {
                                     Row(
                                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
@@ -459,14 +366,15 @@ fun AdminDashboardScreen(
                             }
                         }
 
-                        // Quick Floating Driver Info, Mission & Action Card (Docked cleanly at bottom below map)
+                        // Quick Floating Driver Info, Mission & Action Card (Frosted Translucent Glass docked cleanly over map)
                         activeSelectedUser?.let { selectedEmp ->
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(horizontal = 10.dp, vertical = 6.dp),
                                 shape = RoundedCornerShape(16.dp),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
                                 elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
                             ) {
                                 Column(modifier = Modifier.padding(12.dp)) {
@@ -670,7 +578,6 @@ fun AdminDashboardScreen(
                                         }
                                     }
                                 }
-                            }
                         }
                 } else if (dashboardTab == 1) {
                     // TAB 1: ROUTE ANALYTICS & CHARTS
@@ -1102,10 +1009,25 @@ fun AdminDashboardScreen(
                                                     Text("Chat", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                                 }
                                                 TextButton(
+                                                    onClick = {
+                                                        viewModel.selectUser(usr.userId)
+                                                        if (usr.lastLatitude != 0.0 && usr.lastLongitude != 0.0) {
+                                                            focusedGeoPoint = org.osmdroid.util.GeoPoint(usr.lastLatitude, usr.lastLongitude)
+                                                        }
+                                                        dashboardTab = 0
+                                                    },
+                                                    colors = ButtonDefaults.textButtonColors(contentColor = GeoCyanAccent),
+                                                    modifier = Modifier.testTag("btn_map_employee_${usr.userId}")
+                                                ) {
+                                                    Icon(Icons.Default.Map, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text("Peta", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                }
+                                                TextButton(
                                                     onClick = { userToEditVehicle = usr },
                                                     colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.secondary)
                                                 ) {
-                                                    Text("Ubah Icon", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                    Text("Icon", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                                 }
                                             }
                                         }

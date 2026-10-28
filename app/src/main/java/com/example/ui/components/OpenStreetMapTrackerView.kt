@@ -38,6 +38,7 @@ import kotlinx.coroutines.withContext
 import com.example.util.RoadNetworkEngine
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -99,6 +100,10 @@ fun OpenStreetMapTrackerView(
             setTileSource(TileSourceFactory.MAPNIK) // Free OpenStreetMap tiles
             setMultiTouchControls(true)
             zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
+            setOnTouchListener { v, _ ->
+                v.parent?.requestDisallowInterceptTouchEvent(true)
+                false
+            }
             val initialZoom = if (isUserMode && isLiveTracking) 18.0 else 16.5
             controller.setZoom(initialZoom)
             val initialLat = currentPoint?.latitude ?: routePoints.lastOrNull()?.latitude ?: -6.2088
@@ -152,6 +157,23 @@ fun OpenStreetMapTrackerView(
         }
     }
 
+    var destinationRoadGeoPoints by remember { mutableStateOf<List<GeoPoint>>(emptyList()) }
+
+    // Fetch road network route for destination task to follow real streets
+    LaunchedEffect(destinationTask?.taskId, currentPoint?.latitude, currentPoint?.longitude) {
+        if (destinationTask != null && currentPoint != null) {
+            val roadPairs = RoadNetworkEngine.fetchRoadRoute(
+                startLat = currentPoint.latitude,
+                startLng = currentPoint.longitude,
+                destLat = destinationTask.latitude,
+                destLng = destinationTask.longitude
+            )
+            destinationRoadGeoPoints = roadPairs.map { GeoPoint(it.first, it.second) }
+        } else {
+            destinationRoadGeoPoints = emptyList()
+        }
+    }
+
     // Camera centering behavior:
     // In User Mode (driver navigation): Keep camera centered on vehicle position.
     // In Admin Mode: The camera NEVER auto-centers or moves on its own while inspecting/panning!
@@ -169,9 +191,10 @@ fun OpenStreetMapTrackerView(
         }
     }
 
-    Box(modifier = modifier.fillMaxSize()) {
+    Box(modifier = modifier.fillMaxSize().clipToBounds()) {
         AndroidView(
             factory = { mapView },
+            modifier = Modifier.fillMaxSize().clipToBounds().testTag("osm_map_view"),
             update = { map ->
                 map.overlays.clear()
 
@@ -293,13 +316,31 @@ fun OpenStreetMapTrackerView(
                     val destGeo = GeoPoint(destinationTask.latitude, destinationTask.longitude)
                     val isArrived = destinationTask.status == "ARRIVED"
 
-                    // Guide Line from current vehicle to destination
+                    // Road-following Navigation Line from current vehicle to destination
                     if (currentPoint != null) {
+                        val pointsToUse = if (destinationRoadGeoPoints.isNotEmpty()) {
+                            destinationRoadGeoPoints
+                        } else {
+                            listOf(GeoPoint(currentPoint.latitude, currentPoint.longitude), destGeo)
+                        }
+
+                        // Outer road casing outline
+                        val guideCasing = Polyline(map).apply {
+                            setPoints(pointsToUse)
+                            outlinePaint.color = if (isArrived) android.graphics.Color.parseColor("#064E3B") else android.graphics.Color.parseColor("#4C1D95")
+                            outlinePaint.strokeWidth = 11f
+                            outlinePaint.strokeCap = Paint.Cap.ROUND
+                            outlinePaint.strokeJoin = Paint.Join.ROUND
+                        }
+                        map.overlays.add(guideCasing)
+
+                        // Core destination road line
                         val guideLine = Polyline(map).apply {
-                            setPoints(listOf(GeoPoint(currentPoint.latitude, currentPoint.longitude), destGeo))
-                            outlinePaint.color = if (isArrived) android.graphics.Color.parseColor("#10B981") else android.graphics.Color.parseColor("#7C3AED")
-                            outlinePaint.strokeWidth = 6f
-                            outlinePaint.pathEffect = android.graphics.DashPathEffect(floatArrayOf(20f, 15f), 0f)
+                            setPoints(pointsToUse)
+                            outlinePaint.color = if (isArrived) android.graphics.Color.parseColor("#10B981") else android.graphics.Color.parseColor("#8B5CF6")
+                            outlinePaint.strokeWidth = 7f
+                            outlinePaint.strokeCap = Paint.Cap.ROUND
+                            outlinePaint.strokeJoin = Paint.Join.ROUND
                         }
                         map.overlays.add(guideLine)
                     }
@@ -320,10 +361,7 @@ fun OpenStreetMapTrackerView(
                 }
 
                 map.invalidate()
-            },
-            modifier = Modifier
-                .fillMaxSize()
-                .testTag("osm_map_view")
+            }
         )
 
         // Floating Modern Telematics HUD for OSM Map (Only in Admin overview, hidden in User mode to avoid overlap)

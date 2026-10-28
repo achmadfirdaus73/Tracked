@@ -142,8 +142,22 @@ fun InteractiveMapView(
                     }
                 }
             }
-        } else {
             matchedSegments = emptyList()
+        }
+    }
+
+    var destinationRoadPairs by remember { mutableStateOf<List<Pair<Double, Double>>>(emptyList()) }
+
+    LaunchedEffect(destinationTask?.taskId, currentPoint?.latitude, currentPoint?.longitude) {
+        if (destinationTask != null && currentPoint != null) {
+            destinationRoadPairs = RoadNetworkEngine.fetchRoadRoute(
+                startLat = currentPoint.latitude,
+                startLng = currentPoint.longitude,
+                destLat = destinationTask.latitude,
+                destLng = destinationTask.longitude
+            )
+        } else {
+            destinationRoadPairs = emptyList()
         }
     }
 
@@ -530,16 +544,40 @@ fun InteractiveMapView(
                 val destPx = geoToPixel(destinationTask.latitude, destinationTask.longitude)
                 val isArrived = destinationTask.status == "ARRIVED"
 
-                // Guidance line
+                // Guidance road line
                 if (currentPoint != null) {
-                    val userPx = geoToPixel(currentPoint.latitude, currentPoint.longitude)
-                    drawLine(
-                        color = if (isArrived) StatusGreen else Color(0xFF8B5CF6),
-                        start = userPx,
-                        end = destPx,
-                        strokeWidth = 3.dp.toPx(),
-                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(20f, 15f), 0f)
-                    )
+                    if (destinationRoadPairs.size >= 2) {
+                        val path = Path()
+                        val firstPx = geoToPixel(destinationRoadPairs[0].first, destinationRoadPairs[0].second)
+                        path.moveTo(firstPx.x, firstPx.y)
+                        for (i in 1 until destinationRoadPairs.size) {
+                            val px = geoToPixel(destinationRoadPairs[i].first, destinationRoadPairs[i].second)
+                            path.lineTo(px.x, px.y)
+                        }
+
+                        // Outer casing line
+                        drawPath(
+                            path = path,
+                            color = if (isArrived) Color(0xFF064E3B) else Color(0xFF4C1D95),
+                            style = Stroke(width = 6.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+                        )
+
+                        // Core road line
+                        drawPath(
+                            path = path,
+                            color = if (isArrived) StatusGreen else Color(0xFF8B5CF6),
+                            style = Stroke(width = 4.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+                        )
+                    } else {
+                        val userPx = geoToPixel(currentPoint.latitude, currentPoint.longitude)
+                        drawLine(
+                            color = if (isArrived) StatusGreen else Color(0xFF8B5CF6),
+                            start = userPx,
+                            end = destPx,
+                            strokeWidth = 3.dp.toPx(),
+                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(20f, 15f), 0f)
+                        )
+                    }
                 }
 
                 // Target Circle
