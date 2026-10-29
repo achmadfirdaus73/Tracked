@@ -4,6 +4,8 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.location.Location
 import android.os.Looper
+import com.example.data.local.AppDatabase
+import com.example.data.local.LocationPointEntity
 import com.example.data.model.GeofenceAlert
 import com.example.data.model.GeofenceZone
 import com.example.data.model.LocationPoint
@@ -242,6 +244,54 @@ class LocationEngine(
                 isMock = isMock
             )
 
+            // 1. Zero-Cost Live Streaming via MQTT (Instant 20-50ms latency, 0 database writes!)
+            MqttManager.publishLocation(
+                companyId = user.companyId,
+                userId = user.userId,
+                fullName = user.fullName,
+                unitCode = user.unitCode,
+                latitude = effectiveLat,
+                longitude = effectiveLng,
+                speedKmh = speedKmh,
+                bearing = bearingDeg,
+                batteryLevel = batteryStatus.percentage,
+                isCharging = batteryStatus.isCharging,
+                geofenceStatus = statusDesc,
+                isMock = isMock
+            )
+
+            // 2. Persist full route breadcrumb into local Room Database
+            try {
+                val db = AppDatabase.getInstance(context)
+                val entity = LocationPointEntity(
+                    userId = user.userId,
+                    companyId = user.companyId,
+                    sessionId = currentSessionId,
+                    latitude = effectiveLat,
+                    longitude = effectiveLng,
+                    altitude = alt,
+                    speedKmh = speedKmh,
+                    accuracyMeters = accuracyM,
+                    bearing = bearingDeg,
+                    timestamp = pt.timestamp,
+                    geofenceStatus = statusDesc,
+                    batteryLevel = batteryStatus.percentage,
+                    isMock = isMock
+                )
+                db.locationPointDao().insertPoint(entity)
+                db.userDao().updateLocation(
+                    userId = user.userId,
+                    lat = effectiveLat,
+                    lng = effectiveLng,
+                    speed = speedKmh,
+                    timestamp = pt.timestamp,
+                    hasFakeGps = isMock
+                )
+            } catch (e: Exception) {
+                // Ignore local DB failure
+            }
+
+            // 3. Milestone sync to Firestore (throttled to 0-cost checkpoints)
             repository.recordLocationPoint(pt, user.fullName)
             onPointRecorded(pt)
         }

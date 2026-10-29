@@ -101,6 +101,7 @@ fun UserTrackerScreen(
     val geofences by viewModel.companyGeofences.collectAsState()
     val alertBanner by viewModel.activeAlertBanner.collectAsState()
     val activeTask by viewModel.activeUserTask.collectAsState()
+    val mqttConnected by viewModel.mqttIsConnected.collectAsState()
 
     val context = LocalContext.current
     var realBattery by remember { mutableStateOf(BatteryHelper.getBatteryStatus(context)) }
@@ -166,6 +167,19 @@ fun UserTrackerScreen(
                                         style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
                                         fontWeight = FontWeight.ExtraBold,
                                         color = if (isSharing) StatusGreen else Color.Gray
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = if (mqttConnected) GeoCyanAccent.copy(alpha = 0.15f) else Color.Gray.copy(alpha = 0.12f)
+                                ) {
+                                    Text(
+                                        text = if (mqttConnected) "⚡ MQTT Live" else "⚡ MQTT...",
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (mqttConnected) GeoCyanAccent else Color.Gray
                                     )
                                 }
                             }

@@ -257,31 +257,48 @@ class TrackingRepository {
         }
     }
 
+    // In-memory throttling maps to protect Firebase Free Tier quota (Zero-Cost Telemetry)
+    private val lastFirestoreWritePerUser = mutableMapOf<String, Long>()
+    private val lastFirestoreLatPerUser = mutableMapOf<String, Double>()
+    private val lastFirestoreLngPerUser = mutableMapOf<String, Double>()
+
     suspend fun recordLocationPoint(
         point: LocationPoint,
-        userName: String
+        userName: String,
+        forceCloudSync: Boolean = false
     ) {
-        try {
-            val pointId = UUID.randomUUID().toString()
-            val pointData = mapOf(
-                "id" to pointId,
-                "userId" to point.userId,
-                "companyId" to point.companyId,
-                "sessionId" to point.sessionId,
-                "latitude" to point.latitude,
-                "longitude" to point.longitude,
-                "altitude" to point.altitude,
-                "speedKmh" to point.speedKmh,
-                "accuracyMeters" to point.accuracyMeters,
-                "bearing" to point.bearing,
-                "timestamp" to point.timestamp,
-                "geofenceStatus" to point.geofenceStatus,
-                "batteryLevel" to point.batteryLevel,
-                "isCharging" to point.isCharging,
-                "isMock" to point.isMock
-            )
-            firestore.collection("location_points").document(pointId).set(pointData).await()
+        val now = System.currentTimeMillis()
+        val lastTime = lastFirestoreWritePerUser[point.userId] ?: 0L
+        val lastLat = lastFirestoreLatPerUser[point.userId]
+        val lastLng = lastFirestoreLngPerUser[point.userId]
 
+        val timeDiff = now - lastTime
+        val distDiff = if (lastLat != null && lastLng != null) {
+            com.example.util.GeofenceEngine.calculateDistanceMeters(lastLat, lastLng, point.latitude, point.longitude)
+        } else {
+            Double.MAX_VALUE
+        }
+
+        // Only write to Firestore on milestone checkpoints to save write quota:
+        // 1) Explicit force sync (e.g., job completion or arrival)
+        // 2) Fake GPS security alert
+        // 3) At most once every 15 minutes
+        // 4) Significant distance moved (> 1,000 meters)
+        val shouldWriteToFirestore = forceCloudSync ||
+                point.isMock ||
+                timeDiff >= 15 * 60 * 1000L ||
+                distDiff >= 1000.0
+
+        if (!shouldWriteToFirestore) {
+            // Live point is streamed over MQTT without burning Firestore write quota
+            return
+        }
+
+        lastFirestoreWritePerUser[point.userId] = now
+        lastFirestoreLatPerUser[point.userId] = point.latitude
+        lastFirestoreLngPerUser[point.userId] = point.longitude
+
+        try {
             val userUpdate = mutableMapOf<String, Any>(
                 "lastLatitude" to point.latitude,
                 "lastLongitude" to point.longitude,
@@ -294,9 +311,10 @@ class TrackingRepository {
                 userUpdate["hasFakeGpsAlert"] = true
             }
 
+            // Single update call on users document only
             firestore.collection("users").document(point.userId).update(userUpdate).await()
         } catch (e: Exception) {
-            // handle error
+            // Handle error quietly
         }
     }
 

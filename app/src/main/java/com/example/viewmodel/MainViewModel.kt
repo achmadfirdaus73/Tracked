@@ -19,15 +19,18 @@ import com.example.util.BatteryHelper
 import com.example.util.BatteryStatus
 import com.example.util.ExportUtil
 import com.example.util.LocationEngine
+import com.example.util.MqttManager
 import com.google.firebase.FirebaseApp
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 import java.util.UUID
 
 class MainViewModel(private val application: Application) : ViewModel() {
@@ -43,11 +46,91 @@ class MainViewModel(private val application: Application) : ViewModel() {
     )
     val session: StateFlow<AuthSession> = _session.asStateFlow()
 
+    val mqttIsConnected: StateFlow<Boolean> = MqttManager.isConnected
+    val mqttPacketCounter: StateFlow<Int> = MqttManager.packetCounter
+
+    data class MqttLiveUpdate(
+        val userId: String,
+        val latitude: Double,
+        val longitude: Double,
+        val speedKmh: Float,
+        val bearing: Float,
+        val batteryLevel: Int,
+        val isCharging: Boolean,
+        val geofenceStatus: String,
+        val isMock: Boolean,
+        val timestamp: Long
+    )
+
+    private val _mqttUserPositions = MutableStateFlow<Map<String, MqttLiveUpdate>>(emptyMap())
+    private val _liveSessionPoints = MutableStateFlow<Map<String, List<LocationPoint>>>(emptyMap())
+
     init {
         com.example.util.FirebaseInitializer.init(application)
         val current = _session.value
         if (current is AuthSession.UserSession && current.user.isSharingLocation) {
             toggleLocationSharing(true)
+        }
+        viewModelScope.launch {
+            _session.collect { sess ->
+                val companyId = when (sess) {
+                    is AuthSession.AdminSession -> sess.company.companyId
+                    is AuthSession.UserSession -> sess.user.companyId
+                    else -> null
+                }
+                if (companyId != null) {
+                    subscribeMqttArmada(companyId)
+                }
+            }
+        }
+    }
+
+    private fun subscribeMqttArmada(companyId: String) {
+        MqttManager.subscribeArmada(companyId) { _, payloadJson ->
+            try {
+                val json = JSONObject(payloadJson)
+                val uid = json.getString("userId")
+                val lat = json.getDouble("latitude")
+                val lng = json.getDouble("longitude")
+                val speed = json.optDouble("speedKmh", 0.0).toFloat()
+                val bearing = json.optDouble("bearing", 0.0).toFloat()
+                val battery = json.optInt("batteryLevel", 100)
+                val isCharging = json.optBoolean("isCharging", false)
+                val geofenceStatus = json.optString("geofenceStatus", "Normal")
+                val isMock = json.optBoolean("isMock", false)
+                val timestamp = json.optLong("timestamp", System.currentTimeMillis())
+
+                val update = MqttLiveUpdate(
+                    userId = uid,
+                    latitude = lat,
+                    longitude = lng,
+                    speedKmh = speed,
+                    bearing = bearing,
+                    batteryLevel = battery,
+                    isCharging = isCharging,
+                    geofenceStatus = geofenceStatus,
+                    isMock = isMock,
+                    timestamp = timestamp
+                )
+                _mqttUserPositions.value = _mqttUserPositions.value + (uid to update)
+
+                val newPoint = LocationPoint(
+                    id = timestamp,
+                    userId = uid,
+                    companyId = companyId,
+                    latitude = lat,
+                    longitude = lng,
+                    speedKmh = speed,
+                    bearing = bearing,
+                    batteryLevel = battery,
+                    isCharging = isCharging,
+                    geofenceStatus = geofenceStatus,
+                    isMock = isMock,
+                    timestamp = timestamp
+                )
+                val currentList = _liveSessionPoints.value[uid] ?: emptyList()
+                _liveSessionPoints.value = _liveSessionPoints.value + (uid to (currentList + newPoint).takeLast(250))
+            } catch (_: Exception) { }
         }
     }
 
@@ -86,12 +169,36 @@ class MainViewModel(private val application: Application) : ViewModel() {
     private val _installedFakeApps = MutableStateFlow<List<String>>(emptyList())
     val installedFakeApps: StateFlow<List<String>> = _installedFakeApps.asStateFlow()
 
-    // Reactive streams scoped to current session
-    val companyUsers: StateFlow<List<UserProfile>> = _session.flatMapLatest { sess ->
+    // Reactive streams scoped to current session (Base profiles from Firestore)
+    private val baseCompanyUsers = _session.flatMapLatest { sess ->
         when (sess) {
             is AuthSession.AdminSession -> repository.observeUsersForCompany(sess.company.companyId)
             is AuthSession.UserSession -> repository.observeUsersForCompany(sess.user.companyId)
             else -> flowOf(emptyList())
+        }
+    }
+
+    // Zero-Cost Hybrid Stream: Merges Firestore employee profiles with MQTT zero-cost live coordinates
+    val companyUsers: StateFlow<List<UserProfile>> = combine(
+        baseCompanyUsers,
+        _mqttUserPositions
+    ) { users, mqttMap ->
+        users.map { user ->
+            val live = mqttMap[user.userId]
+            if (live != null) {
+                user.copy(
+                    lastLatitude = live.latitude,
+                    lastLongitude = live.longitude,
+                    lastSpeedKmh = live.speedKmh,
+                    lastUpdatedAt = live.timestamp,
+                    batteryLevel = live.batteryLevel,
+                    isCharging = live.isCharging,
+                    isSharingLocation = true,
+                    hasFakeGpsAlert = live.isMock
+                )
+            } else {
+                user
+            }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -111,14 +218,22 @@ class MainViewModel(private val application: Application) : ViewModel() {
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // History points for selected user in admin view OR current user in user view
-    val targetUserHistory: StateFlow<List<LocationPoint>> = _selectedUserId.flatMapLatest { uid ->
-        val effectiveUid = uid ?: (_session.value as? AuthSession.UserSession)?.user?.userId
-        if (effectiveUid != null) {
-            repository.observeUserHistory(effectiveUid)
-        } else {
-            flowOf(emptyList())
-        }
+    // History points for selected user: merges cloud milestones + live streaming points without database writes
+    val targetUserHistory: StateFlow<List<LocationPoint>> = combine(
+        _selectedUserId.flatMapLatest { uid ->
+            val effectiveUid = uid ?: (_session.value as? AuthSession.UserSession)?.user?.userId
+            if (effectiveUid != null) {
+                repository.observeUserHistory(effectiveUid)
+            } else {
+                flowOf(emptyList())
+            }
+        },
+        _liveSessionPoints,
+        _selectedUserId
+    ) { cloudPoints, liveMap, selectedUid ->
+        val effectiveUid = selectedUid ?: (_session.value as? AuthSession.UserSession)?.user?.userId
+        val livePoints = if (effectiveUid != null) liveMap[effectiveUid] ?: emptyList() else emptyList()
+        (cloudPoints + livePoints).distinctBy { it.timestamp }.sortedBy { it.timestamp }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // Active tasks for company & selected user

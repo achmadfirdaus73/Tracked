@@ -126,6 +126,7 @@ fun AdminDashboardScreen(
     val historyPoints by viewModel.targetUserHistory.collectAsState()
     val highlightedIndex by viewModel.highlightedPointIndex.collectAsState()
     val activeUserTask by viewModel.activeUserTask.collectAsState()
+    val mqttConnected by viewModel.mqttIsConnected.collectAsState()
 
     var dashboardTab by remember { mutableIntStateOf(0) } // 0 = Peta Armada, 1 = Visualisasi Rute & Grafik, 2 = Geofencing, 3 = Karyawan
     var showAddGeofenceDialog by remember { mutableStateOf(false) }
@@ -197,6 +198,24 @@ fun AdminDashboardScreen(
                     }
                 },
                 actions = {
+                    // MQTT Real-time Status Badge
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = if (mqttConnected) GeoCyanAccent.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = if (mqttConnected) "⚡ MQTT Live" else "⚡ MQTT...",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (mqttConnected) GeoCyanAccent else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(4.dp))
                     // Fleet Status Pill (Online / Standby Counts moved to TopAppBar)
                     val onlineCount = users.count { it.isSharingLocation }
                     val standbyCount = users.size - onlineCount
