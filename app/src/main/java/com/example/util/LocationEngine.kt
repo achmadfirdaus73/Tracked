@@ -36,6 +36,8 @@ class LocationEngine(
 
     private var realGpsCallback: LocationCallback? = null
     private var currentSessionId: String = ""
+    private var activeUser: UserProfile? = null
+    private val pendingRouteBatch = mutableListOf<LocationPoint>()
 
     // Track previous inside/outside state of geofences to detect enter/exit events
     private val previousGeofenceState = mutableMapOf<String, Boolean>()
@@ -49,6 +51,7 @@ class LocationEngine(
         onAlertTriggered: (GeofenceAlert) -> Unit = {}
     ) {
         stopTracking()
+        activeUser = user
         hasReportedMockLocation = false
         currentSessionId = if (sessionId.isNotBlank()) sessionId else java.util.UUID.randomUUID().toString()
         startRealGpsTracking(user, onPointRecorded, onAlertTriggered)
@@ -59,6 +62,20 @@ class LocationEngine(
             fusedClient.removeLocationUpdates(callback)
         }
         realGpsCallback = null
+
+        // Flush any remaining recorded points in buffer to Firestore (1 single final write)
+        val user = activeUser
+        val batchToFlush = synchronized(pendingRouteBatch) {
+            val copy = pendingRouteBatch.toList()
+            pendingRouteBatch.clear()
+            copy
+        }
+        if (user != null && batchToFlush.isNotEmpty()) {
+            scope.launch(Dispatchers.IO) {
+                repository.syncCompactRouteBatch(user.userId, user.companyId, batchToFlush)
+            }
+        }
+
         currentSessionId = ""
     }
 
@@ -121,31 +138,18 @@ class LocationEngine(
         onAlertTriggered: (GeofenceAlert) -> Unit
     ) {
         scope.launch(Dispatchers.IO) {
-            // Apply GPS jitter smoothing if accuracy is coarse (> 25m)
+            // High-performance local GPS smoothing: filter out minor hardware jitter (< 20m accuracy)
             val prevLat = lastRecordedLat
             val prevLng = lastRecordedLng
-            val smoothedLat = if (prevLat != null && accuracyM > 25f) {
-                0.65 * lat + 0.35 * prevLat
+            val effectiveLat = if (prevLat != null && accuracyM > 20f) {
+                0.75 * lat + 0.25 * prevLat
             } else {
                 lat
             }
-            val smoothedLng = if (prevLng != null && accuracyM > 25f) {
-                0.65 * lng + 0.35 * prevLng
+            val effectiveLng = if (prevLng != null && accuracyM > 20f) {
+                0.75 * lng + 0.25 * prevLng
             } else {
                 lng
-            }
-
-            // Automatic road snapping: strictly within 20m of road center-line
-            val snapped = RoadNetworkEngine.snapToRoad(smoothedLat, smoothedLng)
-            val effectiveLat = if (snapped.distanceMeters in 0.001..20.0 && snapped.roadName.isNotBlank()) {
-                snapped.latitude
-            } else {
-                smoothedLat
-            }
-            val effectiveLng = if (snapped.distanceMeters in 0.001..20.0 && snapped.roadName.isNotBlank()) {
-                snapped.longitude
-            } else {
-                smoothedLng
             }
 
             lastRecordedLat = effectiveLat
@@ -154,16 +158,10 @@ class LocationEngine(
             val geofences = repository.getGeofences(user.companyId)
             val (activeFences, rawStatusDesc) = GeofenceEngine.evaluateGeofences(effectiveLat, effectiveLng, geofences)
 
-            val roadInfo = if (snapped.roadName.isNotBlank() && snapped.distanceMeters <= 20.0) {
-                "🛣️ ${snapped.roadName}"
+            val statusDesc = if (isMock) {
+                "⚠️ FAKE GPS TERDETEKSI: $rawStatusDesc"
             } else {
-                null
-            }
-
-            val statusDesc = when {
-                isMock -> "⚠️ FAKE GPS TERDETEKSI: $rawStatusDesc"
-                roadInfo != null -> "$roadInfo | $rawStatusDesc"
-                else -> rawStatusDesc
+                rawStatusDesc
             }
 
             // 1. Trigger security alert if Fake GPS detected
@@ -291,7 +289,21 @@ class LocationEngine(
                 // Ignore local DB failure
             }
 
-            // 3. Milestone sync to Firestore (throttled to 0-cost checkpoints)
+            // 3. Compact Route Cloud Sync:
+            // Buffer points and push 20 points in 1 single Firestore write!
+            val batchToSync = synchronized(pendingRouteBatch) {
+                pendingRouteBatch.add(pt)
+                if (pendingRouteBatch.size >= 20) {
+                    val batch = pendingRouteBatch.toList()
+                    pendingRouteBatch.clear()
+                    batch
+                } else null
+            }
+            if (batchToSync != null) {
+                repository.syncCompactRouteBatch(user.userId, user.companyId, batchToSync)
+            }
+
+            // 4. Milestone sync to Firestore (throttled to 0-cost checkpoints)
             repository.recordLocationPoint(pt, user.fullName)
             onPointRecorded(pt)
         }

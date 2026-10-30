@@ -127,37 +127,37 @@ fun InteractiveMapView(
     val routeSegments = remember(routePoints) {
         RouteSegmenter.segmentRoute(routePoints)
     }
-    var matchedSegments by remember { mutableStateOf<List<List<Pair<Double, Double>>>>(emptyList()) }
-
-    // Map-Matching: Asynchronously stitch consecutive coordinates along actual road geometry per segment
-    LaunchedEffect(routeSegments) {
-        if (routeSegments.isNotEmpty()) {
-            matchedSegments = withContext(Dispatchers.IO) {
-                routeSegments.map { seg ->
-                    if (seg.size > 1) {
-                        val coords = seg.map { Pair(it.latitude, it.longitude) }
-                        RoadNetworkEngine.matchRouteToRoadNetwork(coords)
-                    } else {
-                        seg.map { Pair(it.latitude, it.longitude) }
-                    }
-                }
-            }
-            matchedSegments = emptyList()
-        }
-    }
 
     var destinationRoadPairs by remember { mutableStateOf<List<Pair<Double, Double>>>(emptyList()) }
+    var lastRoutedStartLat by remember { mutableStateOf<Double?>(null) }
+    var lastRoutedStartLng by remember { mutableStateOf<Double?>(null) }
 
-    LaunchedEffect(destinationTask?.taskId, currentPoint?.latitude, currentPoint?.longitude) {
+    LaunchedEffect(destinationTask?.taskId, destinationTask?.latitude, destinationTask?.longitude) {
         if (destinationTask != null && currentPoint != null) {
-            destinationRoadPairs = RoadNetworkEngine.fetchRoadRoute(
-                startLat = currentPoint.latitude,
-                startLng = currentPoint.longitude,
-                destLat = destinationTask.latitude,
-                destLng = destinationTask.longitude
-            )
+            val dist = if (lastRoutedStartLat != null && lastRoutedStartLng != null) {
+                com.example.util.GeofenceEngine.calculateDistanceMeters(
+                    lastRoutedStartLat!!, lastRoutedStartLng!!,
+                    currentPoint.latitude, currentPoint.longitude
+                )
+            } else Double.MAX_VALUE
+
+            if (dist > 150.0 || destinationRoadPairs.isEmpty()) {
+                val roadPairs = withContext(Dispatchers.IO) {
+                    RoadNetworkEngine.fetchRoadRoute(
+                        startLat = currentPoint.latitude,
+                        startLng = currentPoint.longitude,
+                        destLat = destinationTask.latitude,
+                        destLng = destinationTask.longitude
+                    )
+                }
+                destinationRoadPairs = roadPairs
+                lastRoutedStartLat = currentPoint.latitude
+                lastRoutedStartLng = currentPoint.longitude
+            }
         } else {
             destinationRoadPairs = emptyList()
+            lastRoutedStartLat = null
+            lastRoutedStartLng = null
         }
     }
 
@@ -316,12 +316,8 @@ fun InteractiveMapView(
                 }
             }
 
-            // 3. Draw Route Polylines per Segment (Road Matched, no teleport lines across sessions)
-            val displaySegments = if (matchedSegments.isNotEmpty()) {
-                matchedSegments
-            } else {
-                routeSegments.map { seg -> seg.map { Pair(it.latitude, it.longitude) } }
-            }
+            // 3. Draw Route Polylines per Segment (No teleport lines across sessions)
+            val displaySegments = routeSegments.map { seg -> seg.map { Pair(it.latitude, it.longitude) } }
 
             for ((segIdx, segCoords) in displaySegments.withIndex()) {
                 if (segCoords.size > 1) {

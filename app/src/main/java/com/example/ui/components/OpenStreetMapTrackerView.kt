@@ -115,12 +115,28 @@ fun OpenStreetMapTrackerView(
     val routeSegments = remember(routePoints) {
         RouteSegmenter.segmentRoute(routePoints)
     }
-    var roadSnappedGeoSegments by remember { mutableStateOf<List<List<GeoPoint>>>(emptyList()) }
+
+    // Direct, zero-lag conversion of GPS breadcrumbs to map coordinates (follows real roads naturally)
+    val displayGeoSegments = remember(routeSegments) {
+        routeSegments.map { seg -> seg.map { GeoPoint(it.latitude, it.longitude) } }
+    }
 
     // Detect Stop Points (periods of staying stationary for 5-10+ minutes)
     val detectedStops = remember(routePoints) {
         StopPointDetector.detectStopPoints(routePoints, minDurationMinutes = 5)
     }
+
+    // Cache vehicle marker drawable so it doesn't re-allocate Bitmaps every frame
+    val cachedVehicleDrawable = remember(vehicleType, isLiveTracking, currentPoint?.isMock) {
+        MapMarkerHelper.createVehicleMarkerDrawable(
+            context = context,
+            vehicleType = vehicleType,
+            isLive = isLiveTracking,
+            isMock = currentPoint?.isMock == true
+        )
+    }
+
+    val cachedStartDrawable = remember { MapMarkerHelper.createStartMarkerDrawable(context) }
 
     // Auto zoom-in when live tracking is active on the user side
     LaunchedEffect(isLiveTracking, isUserMode) {
@@ -137,40 +153,37 @@ fun OpenStreetMapTrackerView(
         }
     }
 
-    // Map-Matching: Asynchronously stitch consecutive coordinates along actual OSM road geometry PER SEGMENT
-    LaunchedEffect(routeSegments) {
-        if (routeSegments.isNotEmpty()) {
-            val matchedSegments = withContext(Dispatchers.IO) {
-                routeSegments.map { segment ->
-                    if (segment.size > 1) {
-                        val rawCoords = segment.map { Pair(it.latitude, it.longitude) }
-                        val matched = RoadNetworkEngine.matchRouteToRoadNetwork(rawCoords)
-                        matched.map { GeoPoint(it.first, it.second) }
-                    } else {
-                        segment.map { GeoPoint(it.latitude, it.longitude) }
-                    }
-                }
-            }
-            roadSnappedGeoSegments = matchedSegments
-        } else {
-            roadSnappedGeoSegments = emptyList()
-        }
-    }
-
     var destinationRoadGeoPoints by remember { mutableStateOf<List<GeoPoint>>(emptyList()) }
+    var lastRoutedStartLat by remember { mutableStateOf<Double?>(null) }
+    var lastRoutedStartLng by remember { mutableStateOf<Double?>(null) }
 
-    // Fetch road network route for destination task to follow real streets
-    LaunchedEffect(destinationTask?.taskId, currentPoint?.latitude, currentPoint?.longitude) {
+    // Fetch road network route for destination task ONLY when destination changes or moved > 150m
+    LaunchedEffect(destinationTask?.taskId, destinationTask?.latitude, destinationTask?.longitude) {
         if (destinationTask != null && currentPoint != null) {
-            val roadPairs = RoadNetworkEngine.fetchRoadRoute(
-                startLat = currentPoint.latitude,
-                startLng = currentPoint.longitude,
-                destLat = destinationTask.latitude,
-                destLng = destinationTask.longitude
-            )
-            destinationRoadGeoPoints = roadPairs.map { GeoPoint(it.first, it.second) }
+            val dist = if (lastRoutedStartLat != null && lastRoutedStartLng != null) {
+                com.example.util.GeofenceEngine.calculateDistanceMeters(
+                    lastRoutedStartLat!!, lastRoutedStartLng!!,
+                    currentPoint.latitude, currentPoint.longitude
+                )
+            } else Double.MAX_VALUE
+
+            if (dist > 150.0 || destinationRoadGeoPoints.isEmpty()) {
+                val roadPairs = withContext(Dispatchers.IO) {
+                    RoadNetworkEngine.fetchRoadRoute(
+                        startLat = currentPoint.latitude,
+                        startLng = currentPoint.longitude,
+                        destLat = destinationTask.latitude,
+                        destLng = destinationTask.longitude
+                    )
+                }
+                destinationRoadGeoPoints = roadPairs.map { GeoPoint(it.first, it.second) }
+                lastRoutedStartLat = currentPoint.latitude
+                lastRoutedStartLng = currentPoint.longitude
+            }
         } else {
             destinationRoadGeoPoints = emptyList()
+            lastRoutedStartLat = null
+            lastRoutedStartLng = null
         }
     }
 
@@ -232,14 +245,8 @@ fun OpenStreetMapTrackerView(
                     map.overlays.add(polygon)
                 }
 
-                // 2. Render Road-Matched Route Polylines on OpenStreetMap (Segmented without teleport lines)
-                val displaySegments = if (roadSnappedGeoSegments.isNotEmpty()) {
-                    roadSnappedGeoSegments
-                } else {
-                    routeSegments.map { seg -> seg.map { GeoPoint(it.latitude, it.longitude) } }
-                }
-
-                for ((segIdx, segPoints) in displaySegments.withIndex()) {
+                // 2. Render Road-Following Route Polylines on OpenStreetMap (Segmented without teleport lines)
+                for ((segIdx, segPoints) in displayGeoSegments.withIndex()) {
                     if (segPoints.size > 1) {
                         // Outer road casing outline
                         val casingPolyline = Polyline(map).apply {
@@ -266,7 +273,7 @@ fun OpenStreetMapTrackerView(
                         val startPt = routeSegments.getOrNull(segIdx)?.firstOrNull()
                         val startMarker = Marker(map).apply {
                             position = startGeo
-                            icon = MapMarkerHelper.createStartMarkerDrawable(context)
+                            icon = cachedStartDrawable
                             title = if (segIdx == 0) "🏁 Titik Awal Keberangkatan" else "🏁 Mulai Trip #${segIdx + 1}"
                             snippet = if (startPt != null) "Mulai: ${StopPointDetector.formatTime(startPt.timestamp)}" else null
                             setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
@@ -292,12 +299,7 @@ fun OpenStreetMapTrackerView(
                     val effectiveBearing = if (compassHeading > 0f) compassHeading else currentPoint.bearing
                     val userMarker = Marker(map).apply {
                         position = GeoPoint(currentPoint.latitude, currentPoint.longitude)
-                        icon = MapMarkerHelper.createVehicleMarkerDrawable(
-                            context = context,
-                            vehicleType = vehicleType,
-                            isLive = isLiveTracking,
-                            isMock = currentPoint.isMock
-                        )
+                        icon = cachedVehicleDrawable
                         title = if (currentPoint.isMock) "⚠️ $userLabel [FAKE GPS!]" else "${vehicleType.iconEmoji} $userLabel (${vehicleType.label})"
                         snippet = String.format(
                             "%.0f km/h | %s | Akurasi: ±%.1fm",
