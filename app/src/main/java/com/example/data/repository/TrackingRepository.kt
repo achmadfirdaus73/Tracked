@@ -266,6 +266,7 @@ class TrackingRepository {
     private val lastFirestoreWritePerUser = mutableMapOf<String, Long>()
     private val lastFirestoreLatPerUser = mutableMapOf<String, Double>()
     private val lastFirestoreLngPerUser = mutableMapOf<String, Double>()
+    private val lastMockStatePerUser = mutableMapOf<String, Boolean>()
 
     suspend fun recordLocationPoint(
         point: LocationPoint,
@@ -276,6 +277,7 @@ class TrackingRepository {
         val lastTime = lastFirestoreWritePerUser[point.userId] ?: 0L
         val lastLat = lastFirestoreLatPerUser[point.userId]
         val lastLng = lastFirestoreLngPerUser[point.userId]
+        val prevMock = lastMockStatePerUser[point.userId]
 
         val timeDiff = now - lastTime
         val distDiff = if (lastLat != null && lastLng != null) {
@@ -284,15 +286,20 @@ class TrackingRepository {
             Double.MAX_VALUE
         }
 
-        // Only write to Firestore on milestone checkpoints to save write quota:
-        // 1) Explicit force sync (e.g., job completion or arrival)
-        // 2) Fake GPS security alert
-        // 3) At most once every 15 minutes
-        // 4) Significant distance moved (> 1,000 meters)
+        // Check if mock status actually changed (e.g. user just turned on/off Fake GPS)
+        val isMockStatusTransition = prevMock != null && prevMock != point.isMock || (prevMock == null && point.isMock)
+
+        // Ultra-strict Firestore Quota Protection:
+        // Live GPS is already 100% streamed in real-time via MQTT with ZERO database writes.
+        // Users collection document should ONLY be updated on:
+        // 1) Explicit force sync (e.g. shift start, shift stop, arrival)
+        // 2) Fake GPS state change (written exactly ONCE, NOT every second!)
+        // 3) At most once every 15 minutes of continuous travel
+        // 4) Significant distance moved (> 2,500 meters)
         val shouldWriteToFirestore = forceCloudSync ||
-                point.isMock ||
+                isMockStatusTransition ||
                 timeDiff >= 15 * 60 * 1000L ||
-                distDiff >= 1000.0
+                distDiff >= 2500.0
 
         if (!shouldWriteToFirestore) {
             // Live point is streamed over MQTT without burning Firestore write quota
@@ -302,6 +309,7 @@ class TrackingRepository {
         lastFirestoreWritePerUser[point.userId] = now
         lastFirestoreLatPerUser[point.userId] = point.latitude
         lastFirestoreLngPerUser[point.userId] = point.longitude
+        lastMockStatePerUser[point.userId] = point.isMock
 
         try {
             val userUpdate = mutableMapOf<String, Any>(
@@ -310,11 +318,9 @@ class TrackingRepository {
                 "lastSpeedKmh" to point.speedKmh,
                 "lastUpdatedAt" to point.timestamp,
                 "batteryLevel" to point.batteryLevel,
-                "isCharging" to point.isCharging
+                "isCharging" to point.isCharging,
+                "hasFakeGpsAlert" to point.isMock
             )
-            if (point.isMock) {
-                userUpdate["hasFakeGpsAlert"] = true
-            }
 
             // Single update call on users document only
             firestore.collection("users").document(point.userId).update(userUpdate).await()
@@ -362,7 +368,7 @@ class TrackingRepository {
     /**
      * Compact Cloud Route Sync:
      * Batches dozens of recorded coordinates into a single document array update.
-     * Consumes only 1 Firestore write per batch, preserving 99.8% of daily write quota!
+     * Consumes strictly 1 single Firestore write per batch, saving 99% of quota!
      */
     suspend fun syncCompactRouteBatch(
         userId: String,
@@ -388,15 +394,15 @@ class TrackingRepository {
             }
 
             val docRef = firestore.collection("daily_routes").document(docId)
-            val baseHeader = mapOf(
+            val docData = mapOf(
                 "userId" to userId,
                 "companyId" to companyId,
                 "date" to dateKey,
-                "lastUpdatedAt" to System.currentTimeMillis()
+                "lastUpdatedAt" to System.currentTimeMillis(),
+                "points" to FieldValue.arrayUnion(*pointMaps.toTypedArray())
             )
-            docRef.set(baseHeader, SetOptions.merge()).await()
-            // Single document array write for the whole batch (costs exactly 1 Firestore write!)
-            docRef.update("points", FieldValue.arrayUnion(*pointMaps.toTypedArray())).await()
+            // Exactly ONE single Firestore write per batch using SetOptions.merge()!
+            docRef.set(docData, SetOptions.merge()).await()
         } catch (_: Exception) {
             // Silently handle offline/transient failure
         }

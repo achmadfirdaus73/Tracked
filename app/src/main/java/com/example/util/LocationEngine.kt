@@ -290,10 +290,10 @@ class LocationEngine(
             }
 
             // 3. Compact Route Cloud Sync:
-            // Buffer points and push 20 points in 1 single Firestore write!
+            // Buffer points and push 60 points in 1 single Firestore write (every ~2-3 minutes)
             val batchToSync = synchronized(pendingRouteBatch) {
                 pendingRouteBatch.add(pt)
-                if (pendingRouteBatch.size >= 20) {
+                if (pendingRouteBatch.size >= 60) {
                     val batch = pendingRouteBatch.toList()
                     pendingRouteBatch.clear()
                     batch
