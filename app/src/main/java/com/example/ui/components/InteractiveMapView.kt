@@ -147,7 +147,8 @@ fun InteractiveMapView(
                         startLat = currentPoint.latitude,
                         startLng = currentPoint.longitude,
                         destLat = destinationTask.latitude,
-                        destLng = destinationTask.longitude
+                        destLng = destinationTask.longitude,
+                        vehicleType = vehicleType
                     )
                 }
                 destinationRoadPairs = roadPairs

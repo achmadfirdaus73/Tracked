@@ -101,6 +101,7 @@ import com.example.util.RoadNetworkEngine
 import com.example.ui.components.AdminUserChatSheet
 import com.example.ui.components.AppMapContainer
 import com.example.ui.components.InteractiveMapView
+import com.example.ui.components.LocationSearchBar
 import com.example.ui.components.RouteAnalyticsCharts
 import com.example.ui.theme.GeoBluePrimary
 import com.example.ui.theme.GeoCyanAccent
@@ -318,34 +319,39 @@ fun AdminDashboardScreen(
                     // TAB 0: FLEET MONITORING MAP
                     Box(modifier = Modifier.fillMaxSize().clipToBounds()) {
                         AppMapContainer(
-                                currentPoint = currentSelectedPoint,
-                                routePoints = historyPoints,
-                                geofences = geofences,
-                                destinationTask = activeUserTask,
-                                focusedGeoPoint = focusedGeoPoint,
-                                showTopStatusPill = false,
-                                onMapTapped = if (isPinningDestinationMode) {
-                                    { lat, lng ->
-                                        pendingDestinationLat = lat
-                                        pendingDestinationLng = lng
-                                        isPinningDestinationMode = false
-                                        showSetDestinationDialog = true
-                                    }
-                                } else null,
-                                userLabel = if (activeSelectedUser?.hasFakeGpsAlert == true) "⚠️ ${activeSelectedUser.fullName} [FAKE GPS]" else activeSelectedUser?.fullName ?: "Armada",
-                                vehicleType = activeSelectedUser?.vehicleType ?: VehicleType.MOTORCYCLE,
-                                isLiveTracking = activeSelectedUser?.isSharingLocation ?: true,
-                                modifier = Modifier.fillMaxSize()
-                            )
+                            currentPoint = currentSelectedPoint,
+                            routePoints = historyPoints,
+                            geofences = geofences,
+                            destinationTask = activeUserTask,
+                            focusedGeoPoint = focusedGeoPoint,
+                            showTopStatusPill = false,
+                            onMapTapped = if (isPinningDestinationMode) {
+                                { lat, lng ->
+                                    pendingDestinationLat = lat
+                                    pendingDestinationLng = lng
+                                    isPinningDestinationMode = false
+                                    showSetDestinationDialog = true
+                                }
+                            } else null,
+                            userLabel = if (activeSelectedUser?.hasFakeGpsAlert == true) "⚠️ ${activeSelectedUser.fullName} [FAKE GPS]" else activeSelectedUser?.fullName ?: "Armada",
+                            vehicleType = activeSelectedUser?.vehicleType ?: VehicleType.MOTORCYCLE,
+                            isLiveTracking = activeSelectedUser?.isSharingLocation ?: true,
+                            modifier = Modifier.fillMaxSize()
+                        )
 
+                        // Top Floating Overlay Container (Guaranteed NO overlap!)
+                        Column(
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
                             // Floating Top Banner when Pinning Destination Mode is Active
                             if (isPinningDestinationMode) {
                                 Card(
-                                    modifier = Modifier
-                                        .align(Alignment.TopCenter)
-                                        .padding(top = 8.dp, start = 12.dp, end = 12.dp)
-                                        .fillMaxWidth(),
-                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.88f)),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.92f)),
                                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
                                     shape = RoundedCornerShape(14.dp),
                                     elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
@@ -382,222 +388,239 @@ fun AdminDashboardScreen(
                                         }
                                     }
                                 }
-                            }
-                        }
-
-                        // Quick Floating Driver Info, Mission & Action Card (Frosted Translucent Glass docked cleanly over map)
-                        activeSelectedUser?.let { selectedEmp ->
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                                shape = RoundedCornerShape(16.dp),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-                                elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
-                            ) {
-                                Column(modifier = Modifier.padding(12.dp)) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.SpaceBetween
-                                        ) {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                // Vehicle Pin Avatar (Tapping allows changing the vehicle type)
-                                                Surface(
-                                                    modifier = Modifier
-                                                        .size(42.dp)
-                                                        .clickable { userToEditVehicle = selectedEmp },
-                                                    shape = RoundedCornerShape(12.dp),
-                                                    color = GeoBluePrimary.copy(alpha = 0.12f)
-                                                ) {
-                                                    Box(contentAlignment = Alignment.Center) {
-                                                        Text(selectedEmp.vehicleType.iconEmoji, fontSize = 22.sp)
-                                                    }
-                                                }
-                                                Spacer(modifier = Modifier.width(10.dp))
-                                                Column {
-                                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                                        Text(
-                                                            text = selectedEmp.fullName,
-                                                            style = MaterialTheme.typography.titleSmall,
-                                                            fontWeight = FontWeight.Bold
-                                                        )
-                                                        Spacer(modifier = Modifier.width(6.dp))
-                                                        Surface(
-                                                            shape = RoundedCornerShape(4.dp),
-                                                            color = if (selectedEmp.isSharingLocation) StatusGreen.copy(alpha = 0.15f) else Color.Gray.copy(alpha = 0.15f)
-                                                        ) {
-                                                            Text(
-                                                                text = if (selectedEmp.isSharingLocation) "ONLINE" else "OFFLINE",
-                                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
-                                                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                                                                fontWeight = FontWeight.ExtraBold,
-                                                                color = if (selectedEmp.isSharingLocation) StatusGreen else Color.Gray
-                                                            )
-                                                        }
-                                                    }
-
-                                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                                        val batColor = when {
-                                                            selectedEmp.isCharging -> StatusGreen
-                                                            selectedEmp.batteryLevel <= 20 -> StatusRed
-                                                            selectedEmp.batteryLevel <= 50 -> StatusYellow
-                                                            else -> StatusGreen
-                                                        }
-                                                        Icon(
-                                                            imageVector = if (selectedEmp.isCharging) Icons.Default.BatteryChargingFull else Icons.Default.BatteryFull,
-                                                            contentDescription = null,
-                                                            tint = batColor,
-                                                            modifier = Modifier.size(13.dp)
-                                                        )
-                                                        Spacer(modifier = Modifier.width(3.dp))
-                                                        Text(
-                                                            text = "${selectedEmp.batteryLevel}%${if (selectedEmp.isCharging) " ⚡" else ""} • Unit ${selectedEmp.unitCode} • ${selectedEmp.vehicleType.label}",
-                                                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                        )
-                                                    }
-                                                }
-                                            }
-
-                                            // Action Buttons: Change Vehicle Icon & Chat
-                                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                OutlinedButton(
-                                                    onClick = { userToEditVehicle = selectedEmp },
-                                                    shape = RoundedCornerShape(10.dp),
-                                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
-                                                ) {
-                                                    Text("Icon Pin", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                                }
-
-                                                Button(
-                                                    onClick = {
-                                                        chatUser = selectedEmp
-                                                        viewModel.openChatWithUser(selectedEmp.userId)
-                                                    },
-                                                    shape = RoundedCornerShape(10.dp),
-                                                    colors = ButtonDefaults.buttonColors(containerColor = GeoBluePrimary),
-                                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                                                    modifier = Modifier.testTag("btn_tab0_chat_driver")
-                                                ) {
-                                                    Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(15.dp))
-                                                    Spacer(modifier = Modifier.width(4.dp))
-                                                    Text("Chat", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                                }
-                                            }
-                                        }
-
-                                        // Active Destination Mission Status (if assigned)
-                                        activeUserTask?.let { task ->
-                                            Spacer(modifier = Modifier.height(8.dp))
-                                            Surface(
+                            } else {
+                                // Quick Floating Driver Info, Mission & Action Card with Integrated Search
+                                activeSelectedUser?.let { selectedEmp ->
+                                    Card(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(16.dp),
+                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)),
+                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                                        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+                                    ) {
+                                        Column(modifier = Modifier.padding(12.dp)) {
+                                            Row(
                                                 modifier = Modifier.fillMaxWidth(),
-                                                shape = RoundedCornerShape(10.dp),
-                                                color = if (task.status == "ARRIVED") StatusGreen.copy(alpha = 0.12f) else GeoBluePrimary.copy(alpha = 0.08f),
-                                                border = BorderStroke(1.dp, if (task.status == "ARRIVED") StatusGreen else GeoBluePrimary.copy(alpha = 0.4f))
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.SpaceBetween
                                             ) {
-                                                Row(
-                                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.SpaceBetween
-                                                ) {
-                                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                                                        Text(if (task.status == "ARRIVED") "✅" else "🎯", fontSize = 18.sp)
-                                                        Spacer(modifier = Modifier.width(8.dp))
-                                                        Column {
+                                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                                    // Vehicle Pin Avatar (Tapping allows changing the vehicle type)
+                                                    Surface(
+                                                        modifier = Modifier
+                                                            .size(42.dp)
+                                                            .clickable { userToEditVehicle = selectedEmp },
+                                                        shape = RoundedCornerShape(12.dp),
+                                                        color = GeoBluePrimary.copy(alpha = 0.12f)
+                                                    ) {
+                                                        Box(contentAlignment = Alignment.Center) {
+                                                            Text(selectedEmp.vehicleType.iconEmoji, fontSize = 22.sp)
+                                                        }
+                                                    }
+                                                    Spacer(modifier = Modifier.width(10.dp))
+                                                    Column {
+                                                        Row(verticalAlignment = Alignment.CenterVertically) {
                                                             Text(
-                                                                text = if (task.status == "ARRIVED") "Telah Tiba: ${task.destinationName}" else "Tujuan: ${task.destinationName}",
-                                                                style = MaterialTheme.typography.labelMedium,
-                                                                fontWeight = FontWeight.Bold,
-                                                                color = if (task.status == "ARRIVED") StatusGreen else MaterialTheme.colorScheme.onSurface
+                                                                text = selectedEmp.fullName,
+                                                                style = MaterialTheme.typography.titleSmall,
+                                                                fontWeight = FontWeight.Bold
                                                             )
-                                                            if (task.status == "ARRIVED") {
-                                                                val dur = task.actualDurationMinutes ?: 0
-                                                                val timeStr = task.arrivedAt?.let { SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(it)) } ?: "-"
+                                                            Spacer(modifier = Modifier.width(6.dp))
+                                                            Surface(
+                                                                shape = RoundedCornerShape(4.dp),
+                                                                color = if (selectedEmp.isSharingLocation) StatusGreen.copy(alpha = 0.15f) else Color.Gray.copy(alpha = 0.15f)
+                                                            ) {
                                                                 Text(
-                                                                    text = "Tiba jam $timeStr • Waktu tempuh: $dur menit",
-                                                                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                                                                    color = StatusGreen
-                                                                )
-                                                            } else {
-                                                                val distKm = String.format(Locale.US, "%.1f km", task.distanceMeters / 1000.0)
-                                                                Text(
-                                                                    text = "Jarak: $distKm • Estimasi: ~${task.estimatedMinutes} menit",
-                                                                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                                    text = if (selectedEmp.isSharingLocation) "ONLINE" else "OFFLINE",
+                                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                                                                    fontWeight = FontWeight.ExtraBold,
+                                                                    color = if (selectedEmp.isSharingLocation) StatusGreen else Color.Gray
                                                                 )
                                                             }
                                                         }
+
+                                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                                            val batColor = when {
+                                                                selectedEmp.isCharging -> StatusGreen
+                                                                selectedEmp.batteryLevel <= 20 -> StatusRed
+                                                                selectedEmp.batteryLevel <= 50 -> StatusYellow
+                                                                else -> StatusGreen
+                                                            }
+                                                            Icon(
+                                                                imageVector = if (selectedEmp.isCharging) Icons.Default.BatteryChargingFull else Icons.Default.BatteryFull,
+                                                                contentDescription = null,
+                                                                tint = batColor,
+                                                                modifier = Modifier.size(13.dp)
+                                                            )
+                                                            Spacer(modifier = Modifier.width(3.dp))
+                                                            Text(
+                                                                text = "${selectedEmp.batteryLevel}%${if (selectedEmp.isCharging) " ⚡" else ""} • Unit ${selectedEmp.unitCode} • ${selectedEmp.vehicleType.label}",
+                                                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                            )
+                                                        }
+                                                    }
+                                                }
+
+                                                // Action Buttons: Change Vehicle Icon & Chat
+                                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                    OutlinedButton(
+                                                        onClick = { userToEditVehicle = selectedEmp },
+                                                        shape = RoundedCornerShape(10.dp),
+                                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                                                    ) {
+                                                        Text("Icon Pin", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                                     }
 
-                                                    if (task.status == "ASSIGNED") {
-                                                        TextButton(
-                                                            onClick = { viewModel.cancelDestinationTask(task.taskId) },
-                                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                                                        ) {
-                                                            Text("Batalkan", color = StatusRed, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                    Button(
+                                                        onClick = {
+                                                            chatUser = selectedEmp
+                                                            viewModel.openChatWithUser(selectedEmp.userId)
+                                                        },
+                                                        shape = RoundedCornerShape(10.dp),
+                                                        colors = ButtonDefaults.buttonColors(containerColor = GeoBluePrimary),
+                                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                                        modifier = Modifier.testTag("btn_tab0_chat_driver")
+                                                    ) {
+                                                        Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(15.dp))
+                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                        Text("Chat", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                    }
+                                                }
+                                            }
+
+                                            // Active Destination Mission Status (if assigned)
+                                            activeUserTask?.let { task ->
+                                                Spacer(modifier = Modifier.height(8.dp))
+                                                Surface(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    shape = RoundedCornerShape(10.dp),
+                                                    color = if (task.status == "ARRIVED") StatusGreen.copy(alpha = 0.12f) else GeoBluePrimary.copy(alpha = 0.08f),
+                                                    border = BorderStroke(1.dp, if (task.status == "ARRIVED") StatusGreen else GeoBluePrimary.copy(alpha = 0.4f))
+                                                ) {
+                                                    Row(
+                                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.SpaceBetween
+                                                    ) {
+                                                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                                            Text(if (task.status == "ARRIVED") "✅" else "🎯", fontSize = 18.sp)
+                                                            Spacer(modifier = Modifier.width(8.dp))
+                                                            Column {
+                                                                Text(
+                                                                    text = if (task.status == "ARRIVED") "Telah Tiba: ${task.destinationName}" else "Tujuan: ${task.destinationName}",
+                                                                    style = MaterialTheme.typography.labelMedium,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    color = if (task.status == "ARRIVED") StatusGreen else MaterialTheme.colorScheme.onSurface
+                                                                )
+                                                                if (task.status == "ARRIVED") {
+                                                                    val dur = task.actualDurationMinutes ?: 0
+                                                                    val timeStr = task.arrivedAt?.let { SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(it)) } ?: "-"
+                                                                    Text(
+                                                                        text = "Tiba jam $timeStr • Waktu tempuh: $dur menit",
+                                                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                                                                        color = StatusGreen
+                                                                    )
+                                                                } else {
+                                                                    val distKm = String.format(Locale.US, "%.1f km", task.distanceMeters / 1000.0)
+                                                                    Text(
+                                                                        text = "Jarak: $distKm • Estimasi: ~${task.estimatedMinutes} menit",
+                                                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                                    )
+                                                                }
+                                                            }
                                                         }
-                                                    } else if (task.status == "ARRIVED") {
-                                                        TextButton(
-                                                            onClick = {
-                                                                destNameInput = "Tujuan ${selectedEmp.fullName}"
-                                                                destNotesInput = ""
-                                                                isPinningDestinationMode = true
-                                                            },
-                                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                                                        ) {
-                                                            Text("Tugas Baru", color = GeoBluePrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+
+                                                        if (task.status == "ASSIGNED") {
+                                                            TextButton(
+                                                                onClick = { viewModel.cancelDestinationTask(task.taskId) },
+                                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                                            ) {
+                                                                Text("Batalkan", color = StatusRed, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                            }
+                                                        } else if (task.status == "ARRIVED") {
+                                                            TextButton(
+                                                                onClick = {
+                                                                    destNameInput = "Tujuan ${selectedEmp.fullName}"
+                                                                    destNotesInput = ""
+                                                                    isPinningDestinationMode = true
+                                                                },
+                                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                                            ) {
+                                                                Text("Tugas Baru", color = GeoBluePrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                            }
                                                         }
                                                     }
                                                 }
                                             }
-                                        }
 
-                                        // Mission Pin & Stop Points Action Buttons Row
-                                        Spacer(modifier = Modifier.height(8.dp))
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                        ) {
-                                            Button(
-                                                onClick = {
-                                                    destNameInput = "Tujuan ${selectedEmp.fullName}"
-                                                    destNotesInput = ""
-                                                    isPinningDestinationMode = true
-                                                },
-                                                modifier = Modifier.weight(1f).testTag("btn_tab0_set_destination"),
-                                                shape = RoundedCornerShape(10.dp),
-                                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
-                                            ) {
-                                                Icon(Icons.Default.PinDrop, contentDescription = null, modifier = Modifier.size(16.dp))
-                                                Spacer(modifier = Modifier.width(4.dp))
-                                                Text(
-                                                    if (activeUserTask != null && activeUserTask?.status == "ASSIGNED") "Ubah di Peta" else "Tandai di Peta",
-                                                    fontSize = 11.sp,
-                                                    fontWeight = FontWeight.Bold
-                                                )
-                                            }
+                                            // Integrated Location Search Bar (For assigning destination by searching place)
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            LocationSearchBar(
+                                                vehicleType = selectedEmp.vehicleType,
+                                                anchorLat = currentSelectedPoint?.latitude ?: -6.2088,
+                                                anchorLng = currentSelectedPoint?.longitude ?: 106.8456,
+                                                placeholderText = "Cari tujuan ${selectedEmp.fullName} (Mall, Pos, Jalan)...",
+                                                modifier = Modifier.fillMaxWidth(),
+                                                onLocationSelected = { result ->
+                                                    destNameInput = result.name
+                                                    pendingDestinationLat = result.latitude
+                                                    pendingDestinationLng = result.longitude
+                                                    focusedGeoPoint = org.osmdroid.util.GeoPoint(result.latitude, result.longitude)
+                                                    isPinningDestinationMode = false
+                                                    showSetDestinationDialog = true
+                                                }
+                                            )
 
-                                            OutlinedButton(
-                                                onClick = { showStopPointsSheet = true },
-                                                modifier = Modifier.weight(1f).testTag("btn_tab0_view_stops"),
-                                                shape = RoundedCornerShape(10.dp),
-                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                                            // Mission Pin & Stop Points Action Buttons Row
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                                             ) {
-                                                Text("🛑", fontSize = 14.sp)
-                                                Spacer(modifier = Modifier.width(4.dp))
-                                                Text(
-                                                    "Titik Berhenti (${detectedStops.size})",
-                                                    fontSize = 11.sp,
-                                                    fontWeight = FontWeight.Bold
-                                                )
+                                                Button(
+                                                    onClick = {
+                                                        destNameInput = "Tujuan ${selectedEmp.fullName}"
+                                                        destNotesInput = ""
+                                                        isPinningDestinationMode = true
+                                                    },
+                                                    modifier = Modifier.weight(1f).testTag("btn_tab0_set_destination"),
+                                                    shape = RoundedCornerShape(10.dp),
+                                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                                                ) {
+                                                    Icon(Icons.Default.PinDrop, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text(
+                                                        if (activeUserTask != null && activeUserTask?.status == "ASSIGNED") "Ubah di Peta" else "Tandai di Peta",
+                                                        fontSize = 11.sp,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
+                                                }
+
+                                                OutlinedButton(
+                                                    onClick = { showStopPointsSheet = true },
+                                                    modifier = Modifier.weight(1f).testTag("btn_tab0_view_stops"),
+                                                    shape = RoundedCornerShape(10.dp),
+                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                                                ) {
+                                                    Text("🛑", fontSize = 14.sp)
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text(
+                                                        "Titik Berhenti (${detectedStops.size})",
+                                                        fontSize = 11.sp,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
+                                                }
                                             }
                                         }
                                     }
                                 }
+                            }
                         }
+                    }
                 } else if (dashboardTab == 1) {
                     // TAB 1: ROUTE ANALYTICS & CHARTS
                     val scrollState = rememberScrollState()

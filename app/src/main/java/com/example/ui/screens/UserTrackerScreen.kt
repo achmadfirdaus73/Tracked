@@ -68,12 +68,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.model.DestinationTask
 import com.example.data.model.LocationPoint
 import com.example.data.model.UserProfile
 import com.example.ui.components.AdminUserChatSheet
 import com.example.ui.components.AppMapContainer
+import com.example.ui.components.LocationSearchBar
 import com.example.ui.theme.GeoBluePrimary
 import com.example.ui.theme.GeoCyanAccent
 import com.example.ui.theme.StatusGreen
@@ -102,6 +105,9 @@ fun UserTrackerScreen(
     val alertBanner by viewModel.activeAlertBanner.collectAsState()
     val activeTask by viewModel.activeUserTask.collectAsState()
     val mqttConnected by viewModel.mqttIsConnected.collectAsState()
+
+    var customUserDestination by remember { mutableStateOf<DestinationTask?>(null) }
+    val effectiveDestination = customUserDestination ?: activeTask
 
     val context = LocalContext.current
     var realBattery by remember { mutableStateOf(BatteryHelper.getBatteryStatus(context)) }
@@ -393,97 +399,178 @@ fun UserTrackerScreen(
                     isLiveTracking = isSharing,
                     vehicleType = user.vehicleType,
                     compassHeading = compassHeading,
-                    destinationTask = activeTask,
+                    destinationTask = effectiveDestination,
                     isUserMode = true,
                     showTopStatusPill = false,
                     modifier = Modifier.fillMaxSize()
                 )
 
-                // Top Compact Floating Telematics HUD Pill (Sleek, minimal width, won't cover map or side controls)
-                Surface(
+                // Top Floating Search, Destination Status & Telematics HUD Container
+                Column(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
-                        .padding(top = 10.dp),
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
-                    shadowElevation = 5.dp,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+                        .fillMaxWidth()
+                        .padding(top = 8.dp, start = 12.dp, end = 12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        // 1. Status Indicator Chip (Live vs Standby)
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (isSharing) StatusGreen.copy(alpha = 0.15f) else StatusYellow.copy(alpha = 0.15f)
+                    // Location Search Bar (Pencarian Alamat & Tempat)
+                    LocationSearchBar(
+                        vehicleType = user.vehicleType,
+                        anchorLat = currentPt?.latitude ?: -6.2088,
+                        anchorLng = currentPt?.longitude ?: 106.8456,
+                        placeholderText = "Cari tujuan (${user.vehicleType.label} - Bebas Tol)...",
+                        modifier = Modifier.fillMaxWidth(),
+                        onLocationSelected = { result ->
+                            customUserDestination = DestinationTask(
+                                destinationName = result.name,
+                                latitude = result.latitude,
+                                longitude = result.longitude,
+                                notes = "Rute Mandiri Driver (${user.vehicleType.label} - Bebas Tol)"
+                            )
+                        }
+                    )
+
+                    // Active Destination Banner with Non-Toll Route Indicator
+                    effectiveDestination?.let { dest ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.95f)),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(7.dp)
-                                        .background(
-                                            color = if (isSharing) StatusGreen else StatusYellow,
-                                            shape = CircleShape
+                                Row(
+                                    modifier = Modifier.weight(1f),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("🎯", fontSize = 20.sp)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Column {
+                                        Text(
+                                            text = dest.destinationName,
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
-                                )
-                                Spacer(modifier = Modifier.width(5.dp))
-                                Text(
-                                    text = if (isSharing) "LIVE" else "STANDBY",
-                                    fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 10.sp,
-                                    color = if (isSharing) StatusGreen else Color(0xFFB45309)
-                                )
+                                        val isNonToll = user.vehicleType in listOf(
+                                            com.example.data.model.VehicleType.MOTORCYCLE,
+                                            com.example.data.model.VehicleType.BICYCLE,
+                                            com.example.data.model.VehicleType.WALK
+                                        )
+                                        Text(
+                                            text = if (isNonToll) "🛡️ Jalur Non-Tol (${user.vehicleType.iconEmoji} ${user.vehicleType.label})" else "🚗 Rute Tercepat",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontSize = 11.sp,
+                                            color = if (isNonToll) Color(0xFF15803D) else MaterialTheme.colorScheme.onPrimaryContainer
+                                        )
+                                    }
+                                }
+                                if (customUserDestination != null) {
+                                    IconButton(
+                                        onClick = { customUserDestination = null },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Close,
+                                            contentDescription = "Hapus Rute Mandiri",
+                                            tint = MaterialTheme.colorScheme.error,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
                             }
                         }
+                    }
 
-                        // 2. Real-time Compass Azimuth
-                        Text(
-                            text = "🧭 ${compassHeading.toInt()}°",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
+                    // Compact Floating Telematics HUD Pill
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+                        shadowElevation = 4.dp,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            // 1. Status Indicator Chip (Live vs Standby)
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isSharing) StatusGreen.copy(alpha = 0.15f) else StatusYellow.copy(alpha = 0.15f)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(7.dp)
+                                            .background(
+                                                color = if (isSharing) StatusGreen else StatusYellow,
+                                                shape = CircleShape
+                                            )
+                                    )
+                                    Spacer(modifier = Modifier.width(5.dp))
+                                    Text(
+                                        text = if (isSharing) "LIVE" else "STANDBY",
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontSize = 10.sp,
+                                        color = if (isSharing) StatusGreen else Color(0xFFB45309)
+                                    )
+                                }
+                            }
 
-                        Box(modifier = Modifier.size(3.dp).background(MaterialTheme.colorScheme.outlineVariant, CircleShape))
-
-                        // 3. Current Speed
-                        Text(
-                            text = "⚡ ${(currentPt?.speedKmh ?: 0f).toInt()} km/h",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = GeoBluePrimary
-                        )
-
-                        Box(modifier = Modifier.size(3.dp).background(MaterialTheme.colorScheme.outlineVariant, CircleShape))
-
-                        // 4. True Battery Percentage
-                        val batColor = when {
-                            realBattery.isCharging -> StatusGreen
-                            realBattery.percentage <= 20 -> StatusRed
-                            realBattery.percentage <= 50 -> StatusYellow
-                            else -> StatusGreen
-                        }
-                        Text(
-                            text = "${if (realBattery.isCharging) "⚡" else "🔋"}${realBattery.percentage}%",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = batColor
-                        )
-
-                        // 5. Stops (if any detected)
-                        if (detectedStops.isNotEmpty()) {
-                            Box(modifier = Modifier.size(3.dp).background(MaterialTheme.colorScheme.outlineVariant, CircleShape))
+                            // 2. Real-time Compass Azimuth
                             Text(
-                                text = "🛑 ${detectedStops.size}",
+                                text = "🧭 ${compassHeading.toInt()}°",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = StatusRed
+                                color = MaterialTheme.colorScheme.onSurface
                             )
+
+                            Box(modifier = Modifier.size(3.dp).background(MaterialTheme.colorScheme.outlineVariant, CircleShape))
+
+                            // 3. Current Speed
+                            Text(
+                                text = "⚡ ${(currentPt?.speedKmh ?: 0f).toInt()} km/h",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = GeoBluePrimary
+                            )
+
+                            Box(modifier = Modifier.size(3.dp).background(MaterialTheme.colorScheme.outlineVariant, CircleShape))
+
+                            // 4. True Battery Percentage
+                            val batColor = when {
+                                realBattery.isCharging -> StatusGreen
+                                realBattery.percentage <= 20 -> StatusRed
+                                realBattery.percentage <= 50 -> StatusYellow
+                                else -> StatusGreen
+                            }
+                            Text(
+                                text = "${if (realBattery.isCharging) "⚡" else "🔋"}${realBattery.percentage}%",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = batColor
+                            )
+
+                            // 5. Stops (if any detected)
+                            if (detectedStops.isNotEmpty()) {
+                                Box(modifier = Modifier.size(3.dp).background(MaterialTheme.colorScheme.outlineVariant, CircleShape))
+                                Text(
+                                    text = "🛑 ${detectedStops.size}",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = StatusRed
+                                )
+                            }
                         }
                     }
                 }

@@ -173,7 +173,8 @@ fun OpenStreetMapTrackerView(
                         startLat = currentPoint.latitude,
                         startLng = currentPoint.longitude,
                         destLat = destinationTask.latitude,
-                        destLng = destinationTask.longitude
+                        destLng = destinationTask.longitude,
+                        vehicleType = vehicleType
                     )
                 }
                 destinationRoadGeoPoints = roadPairs.map { GeoPoint(it.first, it.second) }

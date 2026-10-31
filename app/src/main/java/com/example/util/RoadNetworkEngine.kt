@@ -1,5 +1,6 @@
 package com.example.util
 
+import com.example.data.model.VehicleType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -27,19 +28,33 @@ object RoadNetworkEngine {
 
     /**
      * Fetches exact road-following route geometry between a starting point and destination.
-     * Guaranteed to follow real streets and highways instead of a straight line.
+     * STRICT TOLL ROAD ENFORCEMENT:
+     * - MOTORCYCLE, BICYCLE & WALK: NEVER route via toll roads / motorways (jalan tol bebas hambatan).
+     *   Strictly routes via surface arterial roads, flyovers, and local streets!
+     * - CAR & TRUCK: Standard driving route (tollways allowed).
      */
     suspend fun fetchRoadRoute(
         startLat: Double,
         startLng: Double,
         destLat: Double,
-        destLng: Double
+        destLng: Double,
+        vehicleType: VehicleType = VehicleType.MOTORCYCLE
     ): List<Pair<Double, Double>> = withContext(Dispatchers.IO) {
-        val cacheKey = "route_${(startLat * 1000).roundToInt()},${(startLng * 1000).roundToInt()}_${(destLat * 1000).roundToInt()},${(destLng * 1000).roundToInt()}"
+        val cacheKey = "route_${vehicleType.name}_${(startLat * 1000).roundToInt()},${(startLng * 1000).roundToInt()}_${(destLat * 1000).roundToInt()},${(destLng * 1000).roundToInt()}"
         routeSegmentCache[cacheKey]?.let { return@withContext it }
 
+        // Select OSRM profile:
+        // - 'bicycle' profile strictly avoids toll roads and motorways, ideal for Indonesian motorcycles & bicycles!
+        // - 'foot' profile strictly avoids toll roads and motorways for pedestrians.
+        // - 'driving' profile for cars and commercial trucks.
+        val osrmProfile = when (vehicleType) {
+            VehicleType.WALK -> "foot"
+            VehicleType.BICYCLE, VehicleType.MOTORCYCLE -> "bicycle"
+            VehicleType.CAR, VehicleType.TRUCK -> "driving"
+        }
+
         try {
-            val urlString = "https://router.project-osrm.org/route/v1/driving/$startLng,$startLat;$destLng,$destLat?overview=full&geometries=geojson"
+            val urlString = "https://router.project-osrm.org/route/v1/$osrmProfile/$startLng,$startLat;$destLng,$destLat?overview=full&geometries=geojson"
             val url = URL(urlString)
             val connection = (url.openConnection() as HttpURLConnection).apply {
                 connectTimeout = 3000
