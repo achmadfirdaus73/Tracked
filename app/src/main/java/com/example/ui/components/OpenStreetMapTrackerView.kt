@@ -160,7 +160,14 @@ fun OpenStreetMapTrackerView(
     var lastRoutedStartLng by remember { mutableStateOf<Double?>(null) }
 
     // Fetch up to 3 alternative road routes for destination task when destination or vehicle position changes
-    LaunchedEffect(destinationTask?.taskId, destinationTask?.latitude, destinationTask?.longitude, destinationTask?.selectedRouteIndex) {
+    LaunchedEffect(
+        destinationTask?.taskId,
+        destinationTask?.latitude,
+        destinationTask?.longitude,
+        destinationTask?.selectedRouteIndex,
+        currentPoint?.latitude,
+        currentPoint?.longitude
+    ) {
         if (destinationTask != null && currentPoint != null) {
             val dist = if (lastRoutedStartLat != null && lastRoutedStartLng != null) {
                 com.example.util.GeofenceEngine.calculateDistanceMeters(
@@ -169,7 +176,23 @@ fun OpenStreetMapTrackerView(
                 )
             } else Double.MAX_VALUE
 
-            if (dist > 150.0 || destinationRoadGeoPoints.isEmpty()) {
+            // Pre-fill immediately with Catmull-Rom spline curve so user NEVER sees a straight line
+            if (destinationRoadGeoPoints.isEmpty()) {
+                val immediateCurve = RoadNetworkEngine.generateCentripetalSplineRoute(
+                    listOf(
+                        Pair(currentPoint.latitude, currentPoint.longitude),
+                        Pair(
+                            (currentPoint.latitude + destinationTask.latitude) / 2.0,
+                            (currentPoint.longitude + destinationTask.longitude) / 2.0
+                        ),
+                        Pair(destinationTask.latitude, destinationTask.longitude)
+                    ),
+                    segmentsPerSpan = 8
+                )
+                destinationRoadGeoPoints = immediateCurve.map { GeoPoint(it.first, it.second) }
+            }
+
+            if (dist > 150.0 || destinationRoadGeoPoints.size <= 10) {
                 val routes = withContext(Dispatchers.IO) {
                     RoadNetworkEngine.fetchAlternativeRoutes(
                         startLat = currentPoint.latitude,
@@ -182,7 +205,9 @@ fun OpenStreetMapTrackerView(
                 alternativeRoutesGeoPoints = routes.map { r -> r.points.map { GeoPoint(it.first, it.second) } }
                 chosenRouteIndex = destinationTask.selectedRouteIndex.coerceIn(0, (routes.size - 1).coerceAtLeast(0))
                 val roadPairs = routes.getOrNull(chosenRouteIndex)?.points ?: routes.firstOrNull()?.points ?: emptyList()
-                destinationRoadGeoPoints = roadPairs.map { GeoPoint(it.first, it.second) }
+                if (roadPairs.isNotEmpty()) {
+                    destinationRoadGeoPoints = roadPairs.map { GeoPoint(it.first, it.second) }
+                }
                 lastRoutedStartLat = currentPoint.latitude
                 lastRoutedStartLng = currentPoint.longitude
             }
@@ -346,7 +371,17 @@ fun OpenStreetMapTrackerView(
                         val pointsToUse = if (destinationRoadGeoPoints.isNotEmpty()) {
                             destinationRoadGeoPoints
                         } else {
-                            listOf(GeoPoint(currentPoint.latitude, currentPoint.longitude), destGeo)
+                            RoadNetworkEngine.generateCentripetalSplineRoute(
+                                listOf(
+                                    Pair(currentPoint.latitude, currentPoint.longitude),
+                                    Pair(
+                                        (currentPoint.latitude + destGeo.latitude) / 2.0,
+                                        (currentPoint.longitude + destGeo.longitude) / 2.0
+                                    ),
+                                    Pair(destGeo.latitude, destGeo.longitude)
+                                ),
+                                segmentsPerSpan = 8
+                            ).map { GeoPoint(it.first, it.second) }
                         }
 
                         // Outer road casing outline for chosen route

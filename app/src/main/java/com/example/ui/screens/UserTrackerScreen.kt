@@ -114,17 +114,25 @@ fun UserTrackerScreen(
     var userRouteOptions by remember { mutableStateOf<List<RoadNetworkEngine.RouteOption>>(emptyList()) }
     var selectedUserRouteIndex by remember { mutableStateOf(0) }
 
-    LaunchedEffect(effectiveDestination?.latitude, effectiveDestination?.longitude, effectiveDestination?.taskId) {
+    LaunchedEffect(
+        effectiveDestination?.latitude,
+        effectiveDestination?.longitude,
+        effectiveDestination?.taskId,
+        effectiveDestination?.selectedRouteIndex,
+        currentPt?.latitude,
+        currentPt?.longitude
+    ) {
         if (effectiveDestination != null && currentPt != null) {
-            userRouteOptions = RoadNetworkEngine.fetchAlternativeRoutes(
+            val routes = RoadNetworkEngine.fetchAlternativeRoutes(
                 startLat = currentPt!!.latitude,
                 startLng = currentPt!!.longitude,
                 destLat = effectiveDestination.latitude,
                 destLng = effectiveDestination.longitude,
                 vehicleType = user.vehicleType
             )
-            selectedUserRouteIndex = effectiveDestination.selectedRouteIndex.coerceIn(0, (userRouteOptions.size - 1).coerceAtLeast(0))
-        } else {
+            userRouteOptions = routes
+            selectedUserRouteIndex = effectiveDestination.selectedRouteIndex.coerceIn(0, (routes.size - 1).coerceAtLeast(0))
+        } else if (effectiveDestination == null) {
             userRouteOptions = emptyList()
             selectedUserRouteIndex = 0
         }
