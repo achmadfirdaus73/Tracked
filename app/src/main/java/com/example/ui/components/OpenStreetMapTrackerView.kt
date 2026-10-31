@@ -164,7 +164,6 @@ fun OpenStreetMapTrackerView(
         destinationTask?.taskId,
         destinationTask?.latitude,
         destinationTask?.longitude,
-        destinationTask?.selectedRouteIndex,
         currentPoint?.latitude,
         currentPoint?.longitude
     ) {
@@ -192,7 +191,7 @@ fun OpenStreetMapTrackerView(
                 destinationRoadGeoPoints = immediateCurve.map { GeoPoint(it.first, it.second) }
             }
 
-            if (dist > 150.0 || destinationRoadGeoPoints.size <= 10) {
+            if (dist > 150.0 || alternativeRoutesGeoPoints.isEmpty()) {
                 val routes = withContext(Dispatchers.IO) {
                     RoadNetworkEngine.fetchAlternativeRoutes(
                         startLat = currentPoint.latitude,
@@ -202,11 +201,12 @@ fun OpenStreetMapTrackerView(
                         vehicleType = vehicleType
                     )
                 }
-                alternativeRoutesGeoPoints = routes.map { r -> r.points.map { GeoPoint(it.first, it.second) } }
-                chosenRouteIndex = destinationTask.selectedRouteIndex.coerceIn(0, (routes.size - 1).coerceAtLeast(0))
-                val roadPairs = routes.getOrNull(chosenRouteIndex)?.points ?: routes.firstOrNull()?.points ?: emptyList()
-                if (roadPairs.isNotEmpty()) {
-                    destinationRoadGeoPoints = roadPairs.map { GeoPoint(it.first, it.second) }
+                val parsedRoutes = routes.map { r -> r.points.map { GeoPoint(it.first, it.second) } }
+                alternativeRoutesGeoPoints = parsedRoutes
+                val initialIdx = destinationTask.selectedRouteIndex.coerceIn(0, (parsedRoutes.size - 1).coerceAtLeast(0))
+                chosenRouteIndex = initialIdx
+                if (parsedRoutes.isNotEmpty()) {
+                    destinationRoadGeoPoints = parsedRoutes[initialIdx]
                 }
                 lastRoutedStartLat = currentPoint.latitude
                 lastRoutedStartLng = currentPoint.longitude
@@ -216,6 +216,15 @@ fun OpenStreetMapTrackerView(
             alternativeRoutesGeoPoints = emptyList()
             lastRoutedStartLat = null
             lastRoutedStartLng = null
+        }
+    }
+
+    // React IMMEDIATELY whenever selectedRouteIndex changes in destinationTask or alternative routes arrive
+    LaunchedEffect(destinationTask?.selectedRouteIndex, alternativeRoutesGeoPoints) {
+        if (destinationTask != null && alternativeRoutesGeoPoints.isNotEmpty()) {
+            val targetIdx = destinationTask.selectedRouteIndex.coerceIn(0, alternativeRoutesGeoPoints.size - 1)
+            chosenRouteIndex = targetIdx
+            destinationRoadGeoPoints = alternativeRoutesGeoPoints[targetIdx]
         }
     }
 

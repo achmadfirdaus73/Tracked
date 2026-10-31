@@ -113,12 +113,12 @@ fun UserTrackerScreen(
 
     var userRouteOptions by remember { mutableStateOf<List<RoadNetworkEngine.RouteOption>>(emptyList()) }
     var selectedUserRouteIndex by remember { mutableStateOf(0) }
+    var isRouteNavigating by remember { mutableStateOf(false) }
 
     LaunchedEffect(
         effectiveDestination?.latitude,
         effectiveDestination?.longitude,
         effectiveDestination?.taskId,
-        effectiveDestination?.selectedRouteIndex,
         currentPt?.latitude,
         currentPt?.longitude
     ) {
@@ -131,10 +131,13 @@ fun UserTrackerScreen(
                 vehicleType = user.vehicleType
             )
             userRouteOptions = routes
-            selectedUserRouteIndex = effectiveDestination.selectedRouteIndex.coerceIn(0, (routes.size - 1).coerceAtLeast(0))
+            if (effectiveDestination.selectedRouteIndex in routes.indices) {
+                selectedUserRouteIndex = effectiveDestination.selectedRouteIndex
+            }
         } else if (effectiveDestination == null) {
             userRouteOptions = emptyList()
             selectedUserRouteIndex = 0
+            isRouteNavigating = false
         }
     }
 
@@ -418,7 +421,7 @@ fun UserTrackerScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1.35f)
+                    .weight(2.2f)
             ) {
                 AppMapContainer(
                     currentPoint = currentPt,
@@ -460,15 +463,27 @@ fun UserTrackerScreen(
                         }
                     )
 
-                    // Active Destination Banner with 3 Alternative Routes Indicator
+                    // Active Destination Banner with 3 Alternative Routes Switcher & Navigation Controls
                     effectiveDestination?.let { dest ->
                         Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.95f)),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                            modifier = Modifier.fillMaxWidth().testTag("user_destination_route_card"),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, GeoBluePrimary.copy(alpha = 0.35f)),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
                         ) {
                             Column(modifier = Modifier.padding(10.dp)) {
+                                val isNonToll = user.vehicleType in listOf(
+                                    com.example.data.model.VehicleType.MOTORCYCLE,
+                                    com.example.data.model.VehicleType.BICYCLE,
+                                    com.example.data.model.VehicleType.WALK
+                                )
+                                val activeOpt = userRouteOptions.getOrNull(selectedUserRouteIndex)
+                                val distKm = activeOpt?.let { String.format(Locale.US, "%.1f km", it.distanceMeters / 1000.0) }
+                                    ?: String.format(Locale.US, "%.1f km", dest.distanceMeters / 1000.0)
+                                val durM = activeOpt?.let { (it.durationSeconds / 60.0).toInt().coerceAtLeast(1) }
+                                    ?: dest.estimatedMinutes.coerceAtLeast(1)
+
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically,
@@ -488,80 +503,155 @@ fun UserTrackerScreen(
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis
                                             )
-                                            val isNonToll = user.vehicleType in listOf(
-                                                com.example.data.model.VehicleType.MOTORCYCLE,
-                                                com.example.data.model.VehicleType.BICYCLE,
-                                                com.example.data.model.VehicleType.WALK
-                                            )
-                                            val activeOpt = userRouteOptions.getOrNull(selectedUserRouteIndex)
-                                            val infoText = if (activeOpt != null) {
-                                                val distKm = String.format(Locale.US, "%.1f km", activeOpt.distanceMeters / 1000.0)
-                                                val durM = (activeOpt.durationSeconds / 60.0).toInt().coerceAtLeast(1)
-                                                "${activeOpt.label} • $distKm • ~$durM mnt"
-                                            } else {
-                                                if (isNonToll) "🛡️ Jalur Non-Tol (${user.vehicleType.iconEmoji} ${user.vehicleType.label})" else "🚗 Rute Tercepat"
-                                            }
+                                            val rLabel = activeOpt?.label ?: "Rute ${selectedUserRouteIndex + 1}"
+                                            val infoText = if (isNonToll) "🛡️ $rLabel • $distKm • ~$durM mnt (Bebas Tol)" else "🚗 $rLabel • $distKm • ~$durM mnt"
                                             Text(
                                                 text = infoText,
                                                 style = MaterialTheme.typography.bodySmall,
                                                 fontSize = 11.sp,
-                                                color = if (isNonToll) Color(0xFF15803D) else MaterialTheme.colorScheme.onPrimaryContainer
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = if (isNonToll) Color(0xFF15803D) else MaterialTheme.colorScheme.primary
                                             )
                                         }
                                     }
-                                    if (customUserDestination != null) {
-                                        IconButton(
-                                            onClick = { customUserDestination = null },
-                                            modifier = Modifier.size(28.dp)
-                                        ) {
-                                            Icon(
-                                                Icons.Default.Close,
-                                                contentDescription = "Hapus Rute Mandiri",
-                                                tint = MaterialTheme.colorScheme.error,
-                                                modifier = Modifier.size(18.dp)
-                                            )
-                                        }
+
+                                    // Close / Dismiss Route Button
+                                    IconButton(
+                                        onClick = {
+                                            customUserDestination = null
+                                            val taskToCancel = activeTask
+                                            if (taskToCancel != null) {
+                                                viewModel.cancelDestinationTask(taskToCancel.taskId)
+                                            }
+                                            isRouteNavigating = false
+                                        },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Close,
+                                            contentDescription = "Hapus / Tutup Rute",
+                                            tint = MaterialTheme.colorScheme.error,
+                                            modifier = Modifier.size(18.dp)
+                                        )
                                     }
                                 }
 
-                                // Alternative Routes Selector Chips (Up to 3 routes)
-                                if (userRouteOptions.size > 1) {
+                                // If NOT navigating yet: show 3 alternative route selector chips & "Mulai Navigasi" button
+                                if (!isRouteNavigating) {
+                                    if (userRouteOptions.isNotEmpty()) {
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            userRouteOptions.forEachIndexed { rIdx, opt ->
+                                                val isOptSelected = selectedUserRouteIndex == rIdx
+                                                val optDistKm = String.format(Locale.US, "%.1f km", opt.distanceMeters / 1000.0)
+                                                val optDurM = (opt.durationSeconds / 60.0).toInt().coerceAtLeast(1)
+                                                Surface(
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .clickable { selectedUserRouteIndex = rIdx },
+                                                    shape = RoundedCornerShape(10.dp),
+                                                    color = if (isOptSelected) GeoBluePrimary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                                                    border = androidx.compose.foundation.BorderStroke(
+                                                        if (isOptSelected) 2.dp else 1.dp,
+                                                        if (isOptSelected) GeoBluePrimary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                                    )
+                                                ) {
+                                                    Column(
+                                                        modifier = Modifier.padding(vertical = 5.dp, horizontal = 4.dp),
+                                                        horizontalAlignment = Alignment.CenterHorizontally
+                                                    ) {
+                                                        Text(
+                                                            text = if (rIdx == 0) "⚡ Rute 1" else if (rIdx == 1) "🛣️ Rute 2" else "🛣️ Rute 3",
+                                                            fontSize = 11.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = if (isOptSelected) Color.White else MaterialTheme.colorScheme.onSurface
+                                                        )
+                                                        Text(
+                                                            text = "$optDistKm (~$optDurM m)",
+                                                            fontSize = 9.sp,
+                                                            color = if (isOptSelected) Color.White.copy(alpha = 0.9f) else MaterialTheme.colorScheme.onSurfaceVariant
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
                                     Spacer(modifier = Modifier.height(6.dp))
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        userRouteOptions.forEachIndexed { rIdx, opt ->
-                                            val isOptSelected = selectedUserRouteIndex == rIdx
-                                            val distKm = String.format(Locale.US, "%.1f km", opt.distanceMeters / 1000.0)
-                                            val durM = (opt.durationSeconds / 60.0).toInt().coerceAtLeast(1)
-                                            Surface(
-                                                modifier = Modifier
-                                                    .weight(1f)
-                                                    .clickable { selectedUserRouteIndex = rIdx },
-                                                shape = RoundedCornerShape(8.dp),
-                                                color = if (isOptSelected) GeoBluePrimary else MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
-                                                border = androidx.compose.foundation.BorderStroke(
-                                                    1.dp,
-                                                    if (isOptSelected) GeoBluePrimary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
-                                                )
-                                            ) {
-                                                Column(
-                                                    modifier = Modifier.padding(vertical = 4.dp, horizontal = 4.dp),
-                                                    horizontalAlignment = Alignment.CenterHorizontally
-                                                ) {
-                                                    Text(
-                                                        text = if (rIdx == 0) "⚡ Rute 1" else if (rIdx == 1) "🛣️ Rute 2" else "🛣️ Rute 3",
-                                                        fontSize = 10.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = if (isOptSelected) Color.White else MaterialTheme.colorScheme.onSurface
-                                                    )
-                                                    Text(
-                                                        text = "$distKm (~$durM m)",
-                                                        fontSize = 9.sp,
-                                                        color = if (isOptSelected) Color.White.copy(alpha = 0.9f) else MaterialTheme.colorScheme.onSurfaceVariant
-                                                    )
+                                        Button(
+                                            onClick = { isRouteNavigating = true },
+                                            modifier = Modifier.weight(1f).height(34.dp),
+                                            shape = RoundedCornerShape(10.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = GeoBluePrimary),
+                                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                                        ) {
+                                            Icon(Icons.Default.Route, contentDescription = null, modifier = Modifier.size(15.dp))
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("Mulai Navigasi", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                        OutlinedButton(
+                                            onClick = {
+                                                customUserDestination = null
+                                                val taskToCancel = activeTask
+                                                if (taskToCancel != null) {
+                                                    viewModel.cancelDestinationTask(taskToCancel.taskId)
                                                 }
+                                                isRouteNavigating = false
+                                            },
+                                            modifier = Modifier.height(34.dp),
+                                            shape = RoundedCornerShape(10.dp),
+                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 0.dp)
+                                        ) {
+                                            Text("Tutup Rute", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                } else {
+                                    // Active Navigation Mode: Show compact 1-line controls so map is clean & unobstructed!
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "▶️ Navigasi Aktif (${userRouteOptions.getOrNull(selectedUserRouteIndex)?.label ?: "Rute ${selectedUserRouteIndex + 1}"})",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = StatusGreen
+                                        )
+                                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            OutlinedButton(
+                                                onClick = { isRouteNavigating = false },
+                                                shape = RoundedCornerShape(8.dp),
+                                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                                modifier = Modifier.height(26.dp)
+                                            ) {
+                                                Text("⚙️ Ubah", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                            Button(
+                                                onClick = {
+                                                    customUserDestination = null
+                                                    val taskToCancel = activeTask
+                                                    if (taskToCancel != null) {
+                                                        viewModel.cancelDestinationTask(taskToCancel.taskId)
+                                                    }
+                                                    isRouteNavigating = false
+                                                },
+                                                shape = RoundedCornerShape(8.dp),
+                                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                                modifier = Modifier.height(26.dp)
+                                            ) {
+                                                Text("Selesai", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                             }
                                         }
                                     }
@@ -575,10 +665,10 @@ fun UserTrackerScreen(
                         shape = RoundedCornerShape(20.dp),
                         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
                         shadowElevation = 4.dp,
-                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
@@ -588,22 +678,22 @@ fun UserTrackerScreen(
                                 color = if (isSharing) StatusGreen.copy(alpha = 0.15f) else StatusYellow.copy(alpha = 0.15f)
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Box(
                                         modifier = Modifier
-                                            .size(7.dp)
+                                            .size(6.dp)
                                             .background(
                                                 color = if (isSharing) StatusGreen else StatusYellow,
                                                 shape = CircleShape
                                             )
                                     )
-                                    Spacer(modifier = Modifier.width(5.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
                                     Text(
                                         text = if (isSharing) "LIVE" else "STANDBY",
                                         fontWeight = FontWeight.ExtraBold,
-                                        fontSize = 10.sp,
+                                        fontSize = 9.sp,
                                         color = if (isSharing) StatusGreen else Color(0xFFB45309)
                                     )
                                 }
@@ -612,7 +702,7 @@ fun UserTrackerScreen(
                             // 2. Real-time Compass Azimuth
                             Text(
                                 text = "🧭 ${compassHeading.toInt()}°",
-                                fontSize = 11.sp,
+                                fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
@@ -622,7 +712,7 @@ fun UserTrackerScreen(
                             // 3. Current Speed
                             Text(
                                 text = "⚡ ${(currentPt?.speedKmh ?: 0f).toInt()} km/h",
-                                fontSize = 11.sp,
+                                fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = GeoBluePrimary
                             )
@@ -638,7 +728,7 @@ fun UserTrackerScreen(
                             }
                             Text(
                                 text = "${if (realBattery.isCharging) "⚡" else "🔋"}${realBattery.percentage}%",
-                                fontSize = 11.sp,
+                                fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = batColor
                             )
@@ -648,7 +738,7 @@ fun UserTrackerScreen(
                                 Box(modifier = Modifier.size(3.dp).background(MaterialTheme.colorScheme.outlineVariant, CircleShape))
                                 Text(
                                     text = "🛑 ${detectedStops.size}",
-                                    fontSize = 11.sp,
+                                    fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = StatusRed
                                 )
@@ -662,17 +752,27 @@ fun UserTrackerScreen(
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1.05f),
-                shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp),
+                    .weight(0.8f),
+                shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                elevation = CardDefaults.cardElevation(defaultElevation = 10.dp)
+                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 16.dp, vertical = 14.dp)
+                        .padding(horizontal = 14.dp, vertical = 10.dp)
                         .verticalScroll(rememberScrollState())
                 ) {
+                    // Top Sheet Handle Indicator
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.CenterHorizontally)
+                            .width(36.dp)
+                            .height(4.dp)
+                            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f), CircleShape)
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
                     // Location Sharing Transmission Master Bar
                     Surface(
                         shape = RoundedCornerShape(14.dp),
@@ -762,54 +862,6 @@ fun UserTrackerScreen(
                             icon = Icons.Default.Route,
                             tint = if (isSharing) StatusGreen else Color.Gray,
                             modifier = Modifier.weight(1f)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Direct Chat with Admin Button (1-on-1 Driver to Admin)
-                    Button(
-                        onClick = {
-                            viewModel.openChatWithUser(user.userId)
-                            showChatSheet = true
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp)
-                            .testTag("btn_open_chat_dispatcher"),
-                        colors = ButtonDefaults.buttonColors(containerColor = GeoBluePrimary),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(19.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Hubungi Admin / Dispatcher",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    // Floating Mini-Window (PiP) Mode Button (Google Maps-like floating window)
-                    OutlinedButton(
-                        onClick = onEnterPip,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp)
-                            .testTag("btn_enter_pip_mode"),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = GeoBluePrimary
-                        ),
-                        border = androidx.compose.foundation.BorderStroke(1.2.dp, GeoBluePrimary.copy(alpha = 0.5f))
-                    ) {
-                        Icon(Icons.Default.PictureInPictureAlt, contentDescription = null, modifier = Modifier.size(19.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Buka Pop-up Jendela (PiP)",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold
                         )
                     }
 

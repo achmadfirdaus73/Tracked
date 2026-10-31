@@ -129,10 +129,12 @@ fun InteractiveMapView(
     }
 
     var destinationRoadPairs by remember { mutableStateOf<List<Pair<Double, Double>>>(emptyList()) }
+    var alternativeRoutesPairs by remember { mutableStateOf<List<List<Pair<Double, Double>>>>(emptyList()) }
+    var chosenRouteIndex by remember { mutableStateOf(0) }
     var lastRoutedStartLat by remember { mutableStateOf<Double?>(null) }
     var lastRoutedStartLng by remember { mutableStateOf<Double?>(null) }
 
-    LaunchedEffect(destinationTask?.taskId, destinationTask?.latitude, destinationTask?.longitude) {
+    LaunchedEffect(destinationTask?.taskId, destinationTask?.latitude, destinationTask?.longitude, currentPoint?.latitude, currentPoint?.longitude) {
         if (destinationTask != null && currentPoint != null) {
             val dist = if (lastRoutedStartLat != null && lastRoutedStartLng != null) {
                 com.example.util.GeofenceEngine.calculateDistanceMeters(
@@ -141,9 +143,9 @@ fun InteractiveMapView(
                 )
             } else Double.MAX_VALUE
 
-            if (dist > 150.0 || destinationRoadPairs.isEmpty()) {
-                val roadPairs = withContext(Dispatchers.IO) {
-                    RoadNetworkEngine.fetchRoadRoute(
+            if (dist > 150.0 || alternativeRoutesPairs.isEmpty()) {
+                val routes = withContext(Dispatchers.IO) {
+                    RoadNetworkEngine.fetchAlternativeRoutes(
                         startLat = currentPoint.latitude,
                         startLng = currentPoint.longitude,
                         destLat = destinationTask.latitude,
@@ -151,14 +153,29 @@ fun InteractiveMapView(
                         vehicleType = vehicleType
                     )
                 }
-                destinationRoadPairs = roadPairs
+                val parsedPairs = routes.map { r -> r.points }
+                alternativeRoutesPairs = parsedPairs
+                val initialIdx = destinationTask.selectedRouteIndex.coerceIn(0, (parsedPairs.size - 1).coerceAtLeast(0))
+                chosenRouteIndex = initialIdx
+                if (parsedPairs.isNotEmpty()) {
+                    destinationRoadPairs = parsedPairs[initialIdx]
+                }
                 lastRoutedStartLat = currentPoint.latitude
                 lastRoutedStartLng = currentPoint.longitude
             }
         } else {
             destinationRoadPairs = emptyList()
+            alternativeRoutesPairs = emptyList()
             lastRoutedStartLat = null
             lastRoutedStartLng = null
+        }
+    }
+
+    LaunchedEffect(destinationTask?.selectedRouteIndex, alternativeRoutesPairs) {
+        if (destinationTask != null && alternativeRoutesPairs.isNotEmpty()) {
+            val targetIdx = destinationTask.selectedRouteIndex.coerceIn(0, alternativeRoutesPairs.size - 1)
+            chosenRouteIndex = targetIdx
+            destinationRoadPairs = alternativeRoutesPairs[targetIdx]
         }
     }
 

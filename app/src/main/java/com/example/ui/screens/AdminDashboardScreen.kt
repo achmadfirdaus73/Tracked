@@ -91,6 +91,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.CompanyProfile
@@ -142,6 +143,7 @@ fun AdminDashboardScreen(
     var isPinningDestinationMode by remember { mutableStateOf(false) }
     var showSetDestinationDialog by remember { mutableStateOf(false) }
     var showStopPointsSheet by remember { mutableStateOf(false) }
+    var isAdminOverlayCollapsed by remember { mutableStateOf(false) }
     var focusedGeoPoint by remember { mutableStateOf<org.osmdroid.util.GeoPoint?>(null) }
     var destNameInput by remember { mutableStateOf("") }
     var destNotesInput by remember { mutableStateOf("") }
@@ -354,19 +356,19 @@ fun AdminDashboardScreen(
                             if (isPinningDestinationMode) {
                                 Card(
                                     modifier = Modifier.fillMaxWidth(),
-                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.92f)),
-                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.94f)),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
                                     shape = RoundedCornerShape(14.dp),
                                     elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
                                 ) {
                                     Row(
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
                                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                                            Text("🎯", fontSize = 24.sp)
-                                            Spacer(modifier = Modifier.width(10.dp))
+                                            Text("🎯", fontSize = 22.sp)
+                                            Spacer(modifier = Modifier.width(8.dp))
                                             Column {
                                                 Text(
                                                     text = "Klik Langsung di Peta!",
@@ -385,7 +387,8 @@ fun AdminDashboardScreen(
                                         OutlinedButton(
                                             onClick = { isPinningDestinationMode = false },
                                             colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                                            modifier = Modifier.height(32.dp)
                                         ) {
                                             Text("Batal", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                         }
@@ -394,229 +397,344 @@ fun AdminDashboardScreen(
                             } else {
                                 // Quick Floating Driver Info, Mission & Action Card with Integrated Search
                                 activeSelectedUser?.let { selectedEmp ->
-                                    Card(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        shape = RoundedCornerShape(16.dp),
-                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)),
-                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-                                        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
-                                    ) {
-                                        Column(modifier = Modifier.padding(12.dp)) {
+                                    if (isAdminOverlayCollapsed) {
+                                        Card(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable { isAdminOverlayCollapsed = false }
+                                                .testTag("admin_overlay_collapsed_bar"),
+                                            shape = RoundedCornerShape(14.dp),
+                                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)),
+                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                                            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                                        ) {
                                             Row(
-                                                modifier = Modifier.fillMaxWidth(),
+                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
                                                 verticalAlignment = Alignment.CenterVertically,
                                                 horizontalArrangement = Arrangement.SpaceBetween
                                             ) {
                                                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                                                    // Vehicle Pin Avatar (Tapping allows changing the vehicle type)
-                                                    Surface(
-                                                        modifier = Modifier
-                                                            .size(42.dp)
-                                                            .clickable { userToEditVehicle = selectedEmp },
-                                                        shape = RoundedCornerShape(12.dp),
-                                                        color = GeoBluePrimary.copy(alpha = 0.12f)
-                                                    ) {
-                                                        Box(contentAlignment = Alignment.Center) {
-                                                            Text(selectedEmp.vehicleType.iconEmoji, fontSize = 22.sp)
-                                                        }
-                                                    }
-                                                    Spacer(modifier = Modifier.width(10.dp))
-                                                    Column {
-                                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                                            Text(
-                                                                text = selectedEmp.fullName,
-                                                                style = MaterialTheme.typography.titleSmall,
-                                                                fontWeight = FontWeight.Bold
-                                                            )
-                                                            Spacer(modifier = Modifier.width(6.dp))
-                                                            Surface(
-                                                                shape = RoundedCornerShape(4.dp),
-                                                                color = if (selectedEmp.isSharingLocation) StatusGreen.copy(alpha = 0.15f) else Color.Gray.copy(alpha = 0.15f)
-                                                            ) {
-                                                                Text(
-                                                                    text = if (selectedEmp.isSharingLocation) "ONLINE" else "OFFLINE",
-                                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
-                                                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                                                                    fontWeight = FontWeight.ExtraBold,
-                                                                    color = if (selectedEmp.isSharingLocation) StatusGreen else Color.Gray
-                                                                )
-                                                            }
-                                                        }
-
-                                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                                            val batColor = when {
-                                                                selectedEmp.isCharging -> StatusGreen
-                                                                selectedEmp.batteryLevel <= 20 -> StatusRed
-                                                                selectedEmp.batteryLevel <= 50 -> StatusYellow
-                                                                else -> StatusGreen
-                                                            }
-                                                            Icon(
-                                                                imageVector = if (selectedEmp.isCharging) Icons.Default.BatteryChargingFull else Icons.Default.BatteryFull,
-                                                                contentDescription = null,
-                                                                tint = batColor,
-                                                                modifier = Modifier.size(13.dp)
-                                                            )
-                                                            Spacer(modifier = Modifier.width(3.dp))
-                                                            Text(
-                                                                text = "${selectedEmp.batteryLevel}%${if (selectedEmp.isCharging) " ⚡" else ""} • Unit ${selectedEmp.unitCode} • ${selectedEmp.vehicleType.label}",
-                                                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                            )
-                                                        }
-                                                    }
+                                                    Text(selectedEmp.vehicleType.iconEmoji, fontSize = 18.sp)
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Text(
+                                                        text = "${selectedEmp.fullName} • ${selectedEmp.vehicleType.label}${activeUserTask?.let { " • 🎯 ${it.destinationName}" } ?: ""}",
+                                                        style = MaterialTheme.typography.titleSmall,
+                                                        fontWeight = FontWeight.Bold,
+                                                        fontSize = 12.sp,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
                                                 }
-
-                                                // Action Buttons: Change Vehicle Icon & Chat
-                                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                    OutlinedButton(
-                                                        onClick = { userToEditVehicle = selectedEmp },
-                                                        shape = RoundedCornerShape(10.dp),
-                                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
-                                                    ) {
-                                                        Text("Icon Pin", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                                    }
-
-                                                    Button(
-                                                        onClick = {
-                                                            chatUser = selectedEmp
-                                                            viewModel.openChatWithUser(selectedEmp.userId)
-                                                        },
-                                                        shape = RoundedCornerShape(10.dp),
-                                                        colors = ButtonDefaults.buttonColors(containerColor = GeoBluePrimary),
-                                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                                                        modifier = Modifier.testTag("btn_tab0_chat_driver")
-                                                    ) {
-                                                        Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(15.dp))
-                                                        Spacer(modifier = Modifier.width(4.dp))
-                                                        Text("Chat", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                                    }
+                                                Surface(
+                                                    shape = RoundedCornerShape(8.dp),
+                                                    color = GeoBluePrimary.copy(alpha = 0.12f)
+                                                ) {
+                                                    Text(
+                                                        text = "▼ Detail",
+                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = GeoBluePrimary
+                                                    )
                                                 }
                                             }
-
-                                            // Active Destination Mission Status (if assigned)
-                                            activeUserTask?.let { task ->
-                                                Spacer(modifier = Modifier.height(8.dp))
-                                                Surface(
+                                        }
+                                    } else {
+                                        Card(
+                                            modifier = Modifier.fillMaxWidth().testTag("admin_overlay_expanded_card"),
+                                            shape = RoundedCornerShape(16.dp),
+                                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)),
+                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+                                            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+                                        ) {
+                                            Column(modifier = Modifier.padding(10.dp)) {
+                                                Row(
                                                     modifier = Modifier.fillMaxWidth(),
-                                                    shape = RoundedCornerShape(10.dp),
-                                                    color = if (task.status == "ARRIVED") StatusGreen.copy(alpha = 0.12f) else GeoBluePrimary.copy(alpha = 0.08f),
-                                                    border = BorderStroke(1.dp, if (task.status == "ARRIVED") StatusGreen else GeoBluePrimary.copy(alpha = 0.4f))
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.SpaceBetween
                                                 ) {
-                                                    Row(
-                                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                                                        verticalAlignment = Alignment.CenterVertically,
-                                                        horizontalArrangement = Arrangement.SpaceBetween
-                                                    ) {
-                                                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                                                            Text(if (task.status == "ARRIVED") "✅" else "🎯", fontSize = 18.sp)
-                                                            Spacer(modifier = Modifier.width(8.dp))
-                                                            Column {
+                                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                                        // Vehicle Pin Avatar (Tapping allows changing the vehicle type)
+                                                        Surface(
+                                                            modifier = Modifier
+                                                                .size(36.dp)
+                                                                .clickable { userToEditVehicle = selectedEmp },
+                                                            shape = RoundedCornerShape(10.dp),
+                                                            color = GeoBluePrimary.copy(alpha = 0.12f)
+                                                        ) {
+                                                            Box(contentAlignment = Alignment.Center) {
+                                                                Text(selectedEmp.vehicleType.iconEmoji, fontSize = 18.sp)
+                                                            }
+                                                        }
+                                                        Spacer(modifier = Modifier.width(8.dp))
+                                                        Column {
+                                                            Row(verticalAlignment = Alignment.CenterVertically) {
                                                                 Text(
-                                                                    text = if (task.status == "ARRIVED") "Telah Tiba: ${task.destinationName}" else "Tujuan: ${task.destinationName}",
-                                                                    style = MaterialTheme.typography.labelMedium,
-                                                                    fontWeight = FontWeight.Bold,
-                                                                    color = if (task.status == "ARRIVED") StatusGreen else MaterialTheme.colorScheme.onSurface
+                                                                    text = selectedEmp.fullName,
+                                                                    style = MaterialTheme.typography.titleSmall,
+                                                                    fontWeight = FontWeight.Bold
                                                                 )
-                                                                if (task.status == "ARRIVED") {
-                                                                    val dur = task.actualDurationMinutes ?: 0
-                                                                    val timeStr = task.arrivedAt?.let { SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(it)) } ?: "-"
+                                                                Spacer(modifier = Modifier.width(6.dp))
+                                                                Surface(
+                                                                    shape = RoundedCornerShape(4.dp),
+                                                                    color = if (selectedEmp.isSharingLocation) StatusGreen.copy(alpha = 0.15f) else Color.Gray.copy(alpha = 0.15f)
+                                                                ) {
                                                                     Text(
-                                                                        text = "Tiba jam $timeStr • Waktu tempuh: $dur menit",
-                                                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                                                                        color = StatusGreen
-                                                                    )
-                                                                } else {
-                                                                    val distKm = String.format(Locale.US, "%.1f km", task.distanceMeters / 1000.0)
-                                                                    Text(
-                                                                        text = "Jarak: $distKm • Estimasi: ~${task.estimatedMinutes} menit",
-                                                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                                        text = if (selectedEmp.isSharingLocation) "ONLINE" else "OFFLINE",
+                                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                                                                        fontWeight = FontWeight.ExtraBold,
+                                                                        color = if (selectedEmp.isSharingLocation) StatusGreen else Color.Gray
                                                                     )
                                                                 }
                                                             }
+
+                                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                                val batColor = when {
+                                                                    selectedEmp.isCharging -> StatusGreen
+                                                                    selectedEmp.batteryLevel <= 20 -> StatusRed
+                                                                    selectedEmp.batteryLevel <= 50 -> StatusYellow
+                                                                    else -> StatusGreen
+                                                                }
+                                                                Icon(
+                                                                    imageVector = if (selectedEmp.isCharging) Icons.Default.BatteryChargingFull else Icons.Default.BatteryFull,
+                                                                    contentDescription = null,
+                                                                    tint = batColor,
+                                                                    modifier = Modifier.size(12.dp)
+                                                                )
+                                                                Spacer(modifier = Modifier.width(3.dp))
+                                                                Text(
+                                                                    text = "${selectedEmp.batteryLevel}%${if (selectedEmp.isCharging) " ⚡" else ""} • Unit ${selectedEmp.unitCode} • ${selectedEmp.vehicleType.label}",
+                                                                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp),
+                                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+
+                                                    // Action Buttons: Change Vehicle Icon, Chat & Collapse Overlay
+                                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                        OutlinedButton(
+                                                            onClick = { userToEditVehicle = selectedEmp },
+                                                            shape = RoundedCornerShape(8.dp),
+                                                            contentPadding = PaddingValues(horizontal = 7.dp, vertical = 2.dp),
+                                                            modifier = Modifier.height(28.dp)
+                                                        ) {
+                                                            Text("Icon Pin", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                                         }
 
-                                                        if (task.status == "ASSIGNED") {
-                                                            TextButton(
-                                                                onClick = { viewModel.cancelDestinationTask(task.taskId) },
-                                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                                                            ) {
-                                                                Text("Batalkan", color = StatusRed, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                        Button(
+                                                            onClick = {
+                                                                chatUser = selectedEmp
+                                                                viewModel.openChatWithUser(selectedEmp.userId)
+                                                            },
+                                                            shape = RoundedCornerShape(8.dp),
+                                                            colors = ButtonDefaults.buttonColors(containerColor = GeoBluePrimary),
+                                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                                            modifier = Modifier.height(28.dp).testTag("btn_tab0_chat_driver")
+                                                        ) {
+                                                            Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(13.dp))
+                                                            Spacer(modifier = Modifier.width(4.dp))
+                                                            Text("Chat", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                                        }
+
+                                                        IconButton(
+                                                            onClick = { isAdminOverlayCollapsed = true },
+                                                            modifier = Modifier.size(28.dp)
+                                                        ) {
+                                                            Text("▲", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                        }
+                                                    }
+                                                }
+
+                                                // Active Destination Mission Status (if assigned)
+                                                activeUserTask?.let { task ->
+                                                    Spacer(modifier = Modifier.height(6.dp))
+                                                    Surface(
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                        shape = RoundedCornerShape(10.dp),
+                                                        color = if (task.status == "ARRIVED") StatusGreen.copy(alpha = 0.12f) else GeoBluePrimary.copy(alpha = 0.08f),
+                                                        border = BorderStroke(1.dp, if (task.status == "ARRIVED") StatusGreen else GeoBluePrimary.copy(alpha = 0.35f))
+                                                    ) {
+                                                        Row(
+                                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            horizontalArrangement = Arrangement.SpaceBetween
+                                                        ) {
+                                                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                                                Text(if (task.status == "ARRIVED") "✅" else "🎯", fontSize = 16.sp)
+                                                                Spacer(modifier = Modifier.width(6.dp))
+                                                                Column {
+                                                                    Text(
+                                                                        text = if (task.status == "ARRIVED") "Telah Tiba: ${task.destinationName}" else "Tujuan: ${task.destinationName}",
+                                                                        style = MaterialTheme.typography.labelMedium,
+                                                                        fontWeight = FontWeight.Bold,
+                                                                        fontSize = 11.sp,
+                                                                        color = if (task.status == "ARRIVED") StatusGreen else MaterialTheme.colorScheme.onSurface
+                                                                    )
+                                                                    if (task.status == "ARRIVED") {
+                                                                        val dur = task.actualDurationMinutes ?: 0
+                                                                        val timeStr = task.arrivedAt?.let { SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(it)) } ?: "-"
+                                                                        Text(
+                                                                            text = "Tiba jam $timeStr • Waktu tempuh: $dur menit",
+                                                                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp),
+                                                                            color = StatusGreen
+                                                                        )
+                                                                    } else {
+                                                                        val distKm = String.format(Locale.US, "%.1f km", task.distanceMeters / 1000.0)
+                                                                        Text(
+                                                                            text = "Jarak: $distKm • Estimasi: ~${task.estimatedMinutes} m (${task.selectedRouteName})",
+                                                                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp),
+                                                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                                        )
+                                                                    }
+                                                                }
                                                             }
-                                                        } else if (task.status == "ARRIVED") {
-                                                            TextButton(
-                                                                onClick = {
-                                                                    destNameInput = "Tujuan ${selectedEmp.fullName}"
-                                                                    destNotesInput = ""
-                                                                    isPinningDestinationMode = true
-                                                                },
-                                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                                                            ) {
-                                                                Text("Tugas Baru", color = GeoBluePrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+
+                                                            if (task.status == "ASSIGNED") {
+                                                                TextButton(
+                                                                    onClick = { viewModel.cancelDestinationTask(task.taskId) },
+                                                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                                                                    modifier = Modifier.height(26.dp)
+                                                                ) {
+                                                                    Text("Batalkan", color = StatusRed, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                                                }
+                                                            } else if (task.status == "ARRIVED") {
+                                                                TextButton(
+                                                                    onClick = {
+                                                                        destNameInput = "Tujuan ${selectedEmp.fullName}"
+                                                                        destNotesInput = ""
+                                                                        isPinningDestinationMode = true
+                                                                    },
+                                                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                                                                    modifier = Modifier.height(26.dp)
+                                                                ) {
+                                                                    Text("Tugas Baru", color = GeoBluePrimary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                                                }
                                                             }
                                                         }
                                                     }
                                                 }
+
+                                                // Integrated Location Search Bar (For assigning destination by searching place)
+                                                Spacer(modifier = Modifier.height(6.dp))
+                                                LocationSearchBar(
+                                                    vehicleType = selectedEmp.vehicleType,
+                                                    anchorLat = currentSelectedPoint?.latitude ?: -6.2088,
+                                                    anchorLng = currentSelectedPoint?.longitude ?: 106.8456,
+                                                    placeholderText = "Cari tujuan ${selectedEmp.fullName} (Mall, Pos, Jalan)...",
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    onLocationSelected = { result ->
+                                                        destNameInput = result.name
+                                                        pendingDestinationLat = result.latitude
+                                                        pendingDestinationLng = result.longitude
+                                                        focusedGeoPoint = org.osmdroid.util.GeoPoint(result.latitude, result.longitude)
+                                                        isPinningDestinationMode = false
+                                                        showSetDestinationDialog = true
+                                                    }
+                                                )
+
+                                                // Mission Pin & Stop Points Action Buttons Row
+                                                Spacer(modifier = Modifier.height(6.dp))
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                                ) {
+                                                    Button(
+                                                        onClick = {
+                                                            destNameInput = "Tujuan ${selectedEmp.fullName}"
+                                                            destNotesInput = ""
+                                                            isPinningDestinationMode = true
+                                                        },
+                                                        modifier = Modifier.weight(1f).height(32.dp).testTag("btn_tab0_set_destination"),
+                                                        shape = RoundedCornerShape(8.dp),
+                                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                                                    ) {
+                                                        Icon(Icons.Default.PinDrop, contentDescription = null, modifier = Modifier.size(14.dp))
+                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                        Text(
+                                                            if (activeUserTask != null && activeUserTask?.status == "ASSIGNED") "Ubah di Peta" else "Tandai di Peta",
+                                                            fontSize = 11.sp,
+                                                            fontWeight = FontWeight.Bold
+                                                        )
+                                                    }
+
+                                                    OutlinedButton(
+                                                        onClick = { showStopPointsSheet = true },
+                                                        modifier = Modifier.weight(1f).height(32.dp).testTag("btn_tab0_view_stops"),
+                                                        shape = RoundedCornerShape(8.dp),
+                                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                                                    ) {
+                                                        Text("🛑", fontSize = 12.sp)
+                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                        Text(
+                                                            "Titik Berhenti (${detectedStops.size})",
+                                                            fontSize = 11.sp,
+                                                            fontWeight = FontWeight.Bold
+                                                        )
+                                                    }
+                                                }
                                             }
+                                        }
+                                    }
+                                }
+                            }
+                        }
 
-                                            // Integrated Location Search Bar (For assigning destination by searching place)
-                                            Spacer(modifier = Modifier.height(8.dp))
-                                            LocationSearchBar(
-                                                vehicleType = selectedEmp.vehicleType,
-                                                anchorLat = currentSelectedPoint?.latitude ?: -6.2088,
-                                                anchorLng = currentSelectedPoint?.longitude ?: 106.8456,
-                                                placeholderText = "Cari tujuan ${selectedEmp.fullName} (Mall, Pos, Jalan)...",
-                                                modifier = Modifier.fillMaxWidth(),
-                                                onLocationSelected = { result ->
-                                                    destNameInput = result.name
-                                                    pendingDestinationLat = result.latitude
-                                                    pendingDestinationLng = result.longitude
-                                                    focusedGeoPoint = org.osmdroid.util.GeoPoint(result.latitude, result.longitude)
-                                                    isPinningDestinationMode = false
-                                                    showSetDestinationDialog = true
+                        // Bottom Floating Driver Switcher Bar (Quickly switch between drivers)
+                        if (users.size > 1) {
+                            Surface(
+                                modifier = Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .padding(bottom = 12.dp, start = 12.dp, end = 12.dp),
+                                shape = RoundedCornerShape(20.dp),
+                                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+                                shadowElevation = 6.dp,
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                            ) {
+                                LazyRow(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    items(users) { usr ->
+                                        val isSel = usr.userId == activeSelectedUser?.userId
+                                        Surface(
+                                            modifier = Modifier.clickable {
+                                                viewModel.selectUser(usr.userId)
+                                                if (usr.lastLatitude != 0.0 && usr.lastLongitude != 0.0) {
+                                                    focusedGeoPoint = org.osmdroid.util.GeoPoint(usr.lastLatitude, usr.lastLongitude)
                                                 }
+                                            },
+                                            shape = RoundedCornerShape(12.dp),
+                                            color = if (isSel) GeoBluePrimary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                                            border = BorderStroke(
+                                                if (isSel) 1.5.dp else 1.dp,
+                                                if (isSel) GeoBluePrimary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
                                             )
-
-                                            // Mission Pin & Stop Points Action Buttons Row
-                                            Spacer(modifier = Modifier.height(8.dp))
+                                        ) {
                                             Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                                verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Button(
-                                                    onClick = {
-                                                        destNameInput = "Tujuan ${selectedEmp.fullName}"
-                                                        destNotesInput = ""
-                                                        isPinningDestinationMode = true
-                                                    },
-                                                    modifier = Modifier.weight(1f).testTag("btn_tab0_set_destination"),
-                                                    shape = RoundedCornerShape(10.dp),
-                                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
-                                                ) {
-                                                    Icon(Icons.Default.PinDrop, contentDescription = null, modifier = Modifier.size(16.dp))
-                                                    Spacer(modifier = Modifier.width(4.dp))
-                                                    Text(
-                                                        if (activeUserTask != null && activeUserTask?.status == "ASSIGNED") "Ubah di Peta" else "Tandai di Peta",
-                                                        fontSize = 11.sp,
-                                                        fontWeight = FontWeight.Bold
-                                                    )
-                                                }
-
-                                                OutlinedButton(
-                                                    onClick = { showStopPointsSheet = true },
-                                                    modifier = Modifier.weight(1f).testTag("btn_tab0_view_stops"),
-                                                    shape = RoundedCornerShape(10.dp),
-                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
-                                                ) {
-                                                    Text("🛑", fontSize = 14.sp)
-                                                    Spacer(modifier = Modifier.width(4.dp))
-                                                    Text(
-                                                        "Titik Berhenti (${detectedStops.size})",
-                                                        fontSize = 11.sp,
-                                                        fontWeight = FontWeight.Bold
-                                                    )
-                                                }
+                                                Text(usr.vehicleType.iconEmoji, fontSize = 14.sp)
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text(
+                                                    text = usr.fullName,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (isSel) Color.White else MaterialTheme.colorScheme.onSurface
+                                                )
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(6.dp)
+                                                        .background(
+                                                            color = if (usr.isSharingLocation) StatusGreen else Color.Gray,
+                                                            shape = CircleShape
+                                                        )
+                                                )
                                             }
                                         }
                                     }

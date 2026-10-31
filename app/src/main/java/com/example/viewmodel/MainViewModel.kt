@@ -65,25 +65,7 @@ class MainViewModel(private val application: Application) : ViewModel() {
     private val _mqttUserPositions = MutableStateFlow<Map<String, MqttLiveUpdate>>(emptyMap())
     private val _liveSessionPoints = MutableStateFlow<Map<String, List<LocationPoint>>>(emptyMap())
 
-    init {
-        com.example.util.FirebaseInitializer.init(application)
-        val current = _session.value
-        if (current is AuthSession.UserSession && current.user.isSharingLocation) {
-            toggleLocationSharing(true)
-        }
-        viewModelScope.launch {
-            _session.collect { sess ->
-                val companyId = when (sess) {
-                    is AuthSession.AdminSession -> sess.company.companyId
-                    is AuthSession.UserSession -> sess.user.companyId
-                    else -> null
-                }
-                if (companyId != null) {
-                    subscribeMqttArmada(companyId)
-                }
-            }
-        }
-    }
+
 
     private fun subscribeMqttArmada(companyId: String) {
         MqttManager.subscribeArmada(companyId) { _, payloadJson ->
@@ -278,6 +260,27 @@ class MainViewModel(private val application: Application) : ViewModel() {
             flowOf(emptyList())
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    init {
+        com.example.util.FirebaseInitializer.init(application)
+        val current = _session.value
+        if (current is AuthSession.UserSession && current.user.isSharingLocation) {
+            toggleLocationSharing(true)
+        }
+        viewModelScope.launch {
+            _session.collect { sess ->
+                val companyId = when (sess) {
+                    is AuthSession.AdminSession -> sess.company.companyId
+                    is AuthSession.UserSession -> sess.user.companyId
+                    else -> null
+                }
+                if (companyId != null) {
+                    subscribeMqttArmada(companyId)
+                }
+            }
+        }
+    }
+
 
     fun openChatWithUser(userId: String?) {
         _activeChatUserId.value = userId
