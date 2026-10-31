@@ -63,6 +63,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
@@ -73,6 +75,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
@@ -1386,7 +1389,7 @@ fun AdminDashboardScreen(
         )
     }
 
-    // Set Destination Dialog (Penugasan Titik Tujuan Driver)
+    // Set Destination Dialog (Penugasan Titik Tujuan Driver & Pilihan Rute Jalan)
     if (showSetDestinationDialog && activeSelectedUser != null) {
         val selectedEmp = activeSelectedUser
         val currLat = currentSelectedPoint?.latitude ?: -6.2088
@@ -1395,14 +1398,38 @@ fun AdminDashboardScreen(
             currLat, currLng,
             pendingDestinationLat, pendingDestinationLng
         )
-        val speedKmh = when (selectedEmp.vehicleType) {
-            VehicleType.MOTORCYCLE -> 28.0
-            VehicleType.CAR -> 24.0
-            VehicleType.TRUCK -> 20.0
-            VehicleType.BICYCLE -> 14.0
-            VehicleType.WALK -> 4.5
+
+        var routeOptions by remember { mutableStateOf<List<RoadNetworkEngine.RouteOption>>(emptyList()) }
+        var selectedRouteIndex by remember { mutableStateOf(0) }
+        var isLoadingRoutes by remember { mutableStateOf(true) }
+
+        LaunchedEffect(pendingDestinationLat, pendingDestinationLng) {
+            isLoadingRoutes = true
+            routeOptions = RoadNetworkEngine.fetchAlternativeRoutes(
+                startLat = currLat,
+                startLng = currLng,
+                destLat = pendingDestinationLat,
+                destLng = pendingDestinationLng,
+                vehicleType = selectedEmp.vehicleType
+            )
+            selectedRouteIndex = 0
+            isLoadingRoutes = false
         }
-        val estimatedMinutes = ((distMeters / 1000.0) / speedKmh * 60.0).toInt().coerceAtLeast(1)
+
+        val activeRoute = routeOptions.getOrNull(selectedRouteIndex)
+        val routeDistanceMeters = activeRoute?.distanceMeters ?: distMeters
+        val routeEstimatedMinutes = if (activeRoute != null) {
+            (activeRoute.durationSeconds / 60.0).toInt().coerceAtLeast(1)
+        } else {
+            val speedKmh = when (selectedEmp.vehicleType) {
+                VehicleType.MOTORCYCLE -> 28.0
+                VehicleType.CAR -> 24.0
+                VehicleType.TRUCK -> 20.0
+                VehicleType.BICYCLE -> 14.0
+                VehicleType.WALK -> 4.5
+            }
+            ((distMeters / 1000.0) / speedKmh * 60.0).toInt().coerceAtLeast(1)
+        }
 
         AlertDialog(
             onDismissRequest = { showSetDestinationDialog = false },
@@ -1411,7 +1438,7 @@ fun AdminDashboardScreen(
                     Text("🎯", fontSize = 24.sp)
                     Spacer(modifier = Modifier.width(8.dp))
                     Column {
-                        Text("Konfirmasi Tujuan Driver", fontWeight = FontWeight.Bold)
+                        Text("Konfirmasi Tujuan & Pilihan Rute", fontWeight = FontWeight.Bold)
                         Text(
                             text = "Titik berhasil ditandai dari peta!",
                             style = MaterialTheme.typography.bodySmall,
@@ -1427,7 +1454,7 @@ fun AdminDashboardScreen(
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    // Driver & ETA Summary Card
+                    // Driver & Selected Route ETA Summary Card
                     Surface(
                         shape = RoundedCornerShape(12.dp),
                         color = GeoBluePrimary.copy(alpha = 0.08f),
@@ -1456,9 +1483,9 @@ fun AdminDashboardScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text("Jarak ke Titik Pin:", style = MaterialTheme.typography.bodyMedium)
+                                Text("Jarak via Rute Pilihan:", style = MaterialTheme.typography.bodyMedium)
                                 Text(
-                                    String.format(Locale.US, "%.1f km", distMeters / 1000.0),
+                                    String.format(Locale.US, "%.1f km", routeDistanceMeters / 1000.0),
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -1470,11 +1497,105 @@ fun AdminDashboardScreen(
                             ) {
                                 Text("Estimasi Waktu Sampai:", style = MaterialTheme.typography.bodyMedium)
                                 Text(
-                                    "~$estimatedMinutes menit",
+                                    "~$routeEstimatedMinutes menit",
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = StatusGreen
                                 )
+                            }
+                        }
+                    }
+
+                    // Pilihan Rute Jalan (Hingga 3 Rute Alternatif)
+                    Text(
+                        text = "Pilih Rute Jalan (${routeOptions.size.coerceAtLeast(1)} Pilihan Tersedia):",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    if (isLoadingRoutes) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            androidx.compose.material3.CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                                color = GeoBluePrimary
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Menghitung rute alternatif...", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            routeOptions.forEachIndexed { idx, option ->
+                                val isSelected = selectedRouteIndex == idx
+                                val isNonToll = selectedEmp.vehicleType in listOf(VehicleType.MOTORCYCLE, VehicleType.BICYCLE, VehicleType.WALK)
+                                val distKm = String.format(Locale.US, "%.1f km", option.distanceMeters / 1000.0)
+                                val durMin = (option.durationSeconds / 60.0).toInt().coerceAtLeast(1)
+
+                                Surface(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { selectedRouteIndex = idx },
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = if (isSelected) GeoBluePrimary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                                    border = BorderStroke(
+                                        width = if (isSelected) 1.5.dp else 1.dp,
+                                        color = if (isSelected) GeoBluePrimary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+                                    )
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        RadioButton(
+                                            selected = isSelected,
+                                            onClick = { selectedRouteIndex = idx },
+                                            colors = RadioButtonDefaults.colors(selectedColor = GeoBluePrimary)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(
+                                                    text = option.label,
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                                    color = if (isSelected) GeoBluePrimary else MaterialTheme.colorScheme.onSurface
+                                                )
+                                                if (idx == 0) {
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Surface(
+                                                        shape = RoundedCornerShape(4.dp),
+                                                        color = StatusGreen.copy(alpha = 0.15f)
+                                                    ) {
+                                                        Text(
+                                                            text = "TERCEPAT",
+                                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                                            fontSize = 9.sp,
+                                                            fontWeight = FontWeight.ExtraBold,
+                                                            color = StatusGreen
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                            Text(
+                                                text = "${option.summaryRoads} • $distKm • ~$durMin mnt",
+                                                fontSize = 11.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            if (isNonToll) {
+                                                Text(
+                                                    text = "🛡️ Bebas Jalan Tol (${selectedEmp.vehicleType.iconEmoji})",
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = Color(0xFF15803D)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -1557,7 +1678,11 @@ fun AdminDashboardScreen(
                             destinationName = name,
                             latitude = pendingDestinationLat,
                             longitude = pendingDestinationLng,
-                            notes = destNotesInput
+                            notes = destNotesInput,
+                            selectedRouteIndex = selectedRouteIndex,
+                            selectedRouteName = activeRoute?.label ?: "Rute 1 (Tercepat)",
+                            customDistanceMeters = routeDistanceMeters.toFloat(),
+                            customEtaMinutes = routeEstimatedMinutes
                         )
                         showSetDestinationDialog = false
                     },

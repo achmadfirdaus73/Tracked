@@ -154,11 +154,13 @@ fun OpenStreetMapTrackerView(
     }
 
     var destinationRoadGeoPoints by remember { mutableStateOf<List<GeoPoint>>(emptyList()) }
+    var alternativeRoutesGeoPoints by remember { mutableStateOf<List<List<GeoPoint>>>(emptyList()) }
+    var chosenRouteIndex by remember { mutableStateOf(0) }
     var lastRoutedStartLat by remember { mutableStateOf<Double?>(null) }
     var lastRoutedStartLng by remember { mutableStateOf<Double?>(null) }
 
-    // Fetch road network route for destination task ONLY when destination changes or moved > 150m
-    LaunchedEffect(destinationTask?.taskId, destinationTask?.latitude, destinationTask?.longitude) {
+    // Fetch up to 3 alternative road routes for destination task when destination or vehicle position changes
+    LaunchedEffect(destinationTask?.taskId, destinationTask?.latitude, destinationTask?.longitude, destinationTask?.selectedRouteIndex) {
         if (destinationTask != null && currentPoint != null) {
             val dist = if (lastRoutedStartLat != null && lastRoutedStartLng != null) {
                 com.example.util.GeofenceEngine.calculateDistanceMeters(
@@ -168,8 +170,8 @@ fun OpenStreetMapTrackerView(
             } else Double.MAX_VALUE
 
             if (dist > 150.0 || destinationRoadGeoPoints.isEmpty()) {
-                val roadPairs = withContext(Dispatchers.IO) {
-                    RoadNetworkEngine.fetchRoadRoute(
+                val routes = withContext(Dispatchers.IO) {
+                    RoadNetworkEngine.fetchAlternativeRoutes(
                         startLat = currentPoint.latitude,
                         startLng = currentPoint.longitude,
                         destLat = destinationTask.latitude,
@@ -177,12 +179,16 @@ fun OpenStreetMapTrackerView(
                         vehicleType = vehicleType
                     )
                 }
+                alternativeRoutesGeoPoints = routes.map { r -> r.points.map { GeoPoint(it.first, it.second) } }
+                chosenRouteIndex = destinationTask.selectedRouteIndex.coerceIn(0, (routes.size - 1).coerceAtLeast(0))
+                val roadPairs = routes.getOrNull(chosenRouteIndex)?.points ?: routes.firstOrNull()?.points ?: emptyList()
                 destinationRoadGeoPoints = roadPairs.map { GeoPoint(it.first, it.second) }
                 lastRoutedStartLat = currentPoint.latitude
                 lastRoutedStartLng = currentPoint.longitude
             }
         } else {
             destinationRoadGeoPoints = emptyList()
+            alternativeRoutesGeoPoints = emptyList()
             lastRoutedStartLat = null
             lastRoutedStartLng = null
         }
@@ -321,13 +327,29 @@ fun OpenStreetMapTrackerView(
 
                     // Road-following Navigation Line from current vehicle to destination
                     if (currentPoint != null) {
+                        // 4a. Draw secondary alternative routes (if 2 or 3 alternatives exist and not arrived)
+                        if (alternativeRoutesGeoPoints.size > 1 && !isArrived) {
+                            alternativeRoutesGeoPoints.forEachIndexed { rIdx, altPts ->
+                                if (rIdx != chosenRouteIndex && altPts.isNotEmpty()) {
+                                    val altPolyline = Polyline(map).apply {
+                                        setPoints(altPts)
+                                        outlinePaint.color = android.graphics.Color.parseColor("#94A3B8")
+                                        outlinePaint.strokeWidth = 6f
+                                        outlinePaint.strokeCap = Paint.Cap.ROUND
+                                        outlinePaint.strokeJoin = Paint.Join.ROUND
+                                    }
+                                    map.overlays.add(altPolyline)
+                                }
+                            }
+                        }
+
                         val pointsToUse = if (destinationRoadGeoPoints.isNotEmpty()) {
                             destinationRoadGeoPoints
                         } else {
                             listOf(GeoPoint(currentPoint.latitude, currentPoint.longitude), destGeo)
                         }
 
-                        // Outer road casing outline
+                        // Outer road casing outline for chosen route
                         val guideCasing = Polyline(map).apply {
                             setPoints(pointsToUse)
                             outlinePaint.color = if (isArrived) android.graphics.Color.parseColor("#064E3B") else android.graphics.Color.parseColor("#4C1D95")

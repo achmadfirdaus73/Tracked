@@ -5,6 +5,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -89,6 +90,7 @@ import com.example.util.StopPointDetector
 import com.example.util.rememberCompassHeading
 import com.example.viewmodel.MainViewModel
 import kotlinx.coroutines.delay
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -108,6 +110,25 @@ fun UserTrackerScreen(
 
     var customUserDestination by remember { mutableStateOf<DestinationTask?>(null) }
     val effectiveDestination = customUserDestination ?: activeTask
+
+    var userRouteOptions by remember { mutableStateOf<List<RoadNetworkEngine.RouteOption>>(emptyList()) }
+    var selectedUserRouteIndex by remember { mutableStateOf(0) }
+
+    LaunchedEffect(effectiveDestination?.latitude, effectiveDestination?.longitude, effectiveDestination?.taskId) {
+        if (effectiveDestination != null && currentPt != null) {
+            userRouteOptions = RoadNetworkEngine.fetchAlternativeRoutes(
+                startLat = currentPt!!.latitude,
+                startLng = currentPt!!.longitude,
+                destLat = effectiveDestination.latitude,
+                destLng = effectiveDestination.longitude,
+                vehicleType = user.vehicleType
+            )
+            selectedUserRouteIndex = effectiveDestination.selectedRouteIndex.coerceIn(0, (userRouteOptions.size - 1).coerceAtLeast(0))
+        } else {
+            userRouteOptions = emptyList()
+            selectedUserRouteIndex = 0
+        }
+    }
 
     val context = LocalContext.current
     var realBattery by remember { mutableStateOf(BatteryHelper.getBatteryStatus(context)) }
@@ -399,7 +420,7 @@ fun UserTrackerScreen(
                     isLiveTracking = isSharing,
                     vehicleType = user.vehicleType,
                     compassHeading = compassHeading,
-                    destinationTask = effectiveDestination,
+                    destinationTask = effectiveDestination?.copy(selectedRouteIndex = selectedUserRouteIndex),
                     isUserMode = true,
                     showTopStatusPill = false,
                     modifier = Modifier.fillMaxSize()
@@ -431,7 +452,7 @@ fun UserTrackerScreen(
                         }
                     )
 
-                    // Active Destination Banner with Non-Toll Route Indicator
+                    // Active Destination Banner with 3 Alternative Routes Indicator
                     effectiveDestination?.let { dest ->
                         Card(
                             modifier = Modifier.fillMaxWidth(),
@@ -439,49 +460,102 @@ fun UserTrackerScreen(
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.95f)),
                             elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
                         ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
                                 Row(
-                                    modifier = Modifier.weight(1f),
-                                    verticalAlignment = Alignment.CenterVertically
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Text("🎯", fontSize = 20.sp)
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Column {
-                                        Text(
-                                            text = dest.destinationName,
-                                            style = MaterialTheme.typography.titleSmall,
-                                            fontWeight = FontWeight.Bold,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        val isNonToll = user.vehicleType in listOf(
-                                            com.example.data.model.VehicleType.MOTORCYCLE,
-                                            com.example.data.model.VehicleType.BICYCLE,
-                                            com.example.data.model.VehicleType.WALK
-                                        )
-                                        Text(
-                                            text = if (isNonToll) "🛡️ Jalur Non-Tol (${user.vehicleType.iconEmoji} ${user.vehicleType.label})" else "🚗 Rute Tercepat",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            fontSize = 11.sp,
-                                            color = if (isNonToll) Color(0xFF15803D) else MaterialTheme.colorScheme.onPrimaryContainer
-                                        )
+                                    Row(
+                                        modifier = Modifier.weight(1f),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("🎯", fontSize = 20.sp)
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Column {
+                                            Text(
+                                                text = dest.destinationName,
+                                                style = MaterialTheme.typography.titleSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            val isNonToll = user.vehicleType in listOf(
+                                                com.example.data.model.VehicleType.MOTORCYCLE,
+                                                com.example.data.model.VehicleType.BICYCLE,
+                                                com.example.data.model.VehicleType.WALK
+                                            )
+                                            val activeOpt = userRouteOptions.getOrNull(selectedUserRouteIndex)
+                                            val infoText = if (activeOpt != null) {
+                                                val distKm = String.format(Locale.US, "%.1f km", activeOpt.distanceMeters / 1000.0)
+                                                val durM = (activeOpt.durationSeconds / 60.0).toInt().coerceAtLeast(1)
+                                                "${activeOpt.label} • $distKm • ~$durM mnt"
+                                            } else {
+                                                if (isNonToll) "🛡️ Jalur Non-Tol (${user.vehicleType.iconEmoji} ${user.vehicleType.label})" else "🚗 Rute Tercepat"
+                                            }
+                                            Text(
+                                                text = infoText,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                fontSize = 11.sp,
+                                                color = if (isNonToll) Color(0xFF15803D) else MaterialTheme.colorScheme.onPrimaryContainer
+                                            )
+                                        }
+                                    }
+                                    if (customUserDestination != null) {
+                                        IconButton(
+                                            onClick = { customUserDestination = null },
+                                            modifier = Modifier.size(28.dp)
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Close,
+                                                contentDescription = "Hapus Rute Mandiri",
+                                                tint = MaterialTheme.colorScheme.error,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
                                     }
                                 }
-                                if (customUserDestination != null) {
-                                    IconButton(
-                                        onClick = { customUserDestination = null },
-                                        modifier = Modifier.size(28.dp)
+
+                                // Alternative Routes Selector Chips (Up to 3 routes)
+                                if (userRouteOptions.size > 1) {
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                                     ) {
-                                        Icon(
-                                            Icons.Default.Close,
-                                            contentDescription = "Hapus Rute Mandiri",
-                                            tint = MaterialTheme.colorScheme.error,
-                                            modifier = Modifier.size(18.dp)
-                                        )
+                                        userRouteOptions.forEachIndexed { rIdx, opt ->
+                                            val isOptSelected = selectedUserRouteIndex == rIdx
+                                            val distKm = String.format(Locale.US, "%.1f km", opt.distanceMeters / 1000.0)
+                                            val durM = (opt.durationSeconds / 60.0).toInt().coerceAtLeast(1)
+                                            Surface(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .clickable { selectedUserRouteIndex = rIdx },
+                                                shape = RoundedCornerShape(8.dp),
+                                                color = if (isOptSelected) GeoBluePrimary else MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                                                border = androidx.compose.foundation.BorderStroke(
+                                                    1.dp,
+                                                    if (isOptSelected) GeoBluePrimary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+                                                )
+                                            ) {
+                                                Column(
+                                                    modifier = Modifier.padding(vertical = 4.dp, horizontal = 4.dp),
+                                                    horizontalAlignment = Alignment.CenterHorizontally
+                                                ) {
+                                                    Text(
+                                                        text = if (rIdx == 0) "⚡ Rute 1" else if (rIdx == 1) "🛣️ Rute 2" else "🛣️ Rute 3",
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = if (isOptSelected) Color.White else MaterialTheme.colorScheme.onSurface
+                                                    )
+                                                    Text(
+                                                        text = "$distKm (~$durM m)",
+                                                        fontSize = 9.sp,
+                                                        color = if (isOptSelected) Color.White.copy(alpha = 0.9f) else MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }

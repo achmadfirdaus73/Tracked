@@ -456,7 +456,11 @@ class MainViewModel(private val application: Application) : ViewModel() {
         destinationName: String,
         latitude: Double,
         longitude: Double,
-        notes: String = ""
+        notes: String = "",
+        selectedRouteIndex: Int = 0,
+        selectedRouteName: String = "Rute 1 (Tercepat)",
+        customDistanceMeters: Float? = null,
+        customEtaMinutes: Int? = null
     ) {
         val sess = _session.value
         val companyId = when (sess) {
@@ -469,9 +473,9 @@ class MainViewModel(private val application: Application) : ViewModel() {
             val user = companyUsers.value.find { it.userId == userId }
             val driverLat = user?.lastLatitude ?: -6.2088
             val driverLng = user?.lastLongitude ?: 106.8456
-            val distM = com.example.util.GeofenceEngine.calculateDistanceMeters(driverLat, driverLng, latitude, longitude).toFloat()
+            val distM = customDistanceMeters ?: com.example.util.GeofenceEngine.calculateDistanceMeters(driverLat, driverLng, latitude, longitude).toFloat()
             val speed = if ((user?.lastSpeedKmh ?: 0f) > 5f) user!!.lastSpeedKmh else 25f
-            val etaMinutes = maxOf(1, ((distM / 1000f) / speed * 60).toInt())
+            val etaMinutes = customEtaMinutes ?: maxOf(1, ((distM / 1000f) / speed * 60).toInt())
 
             val task = DestinationTask(
                 taskId = UUID.randomUUID().toString(),
@@ -484,7 +488,9 @@ class MainViewModel(private val application: Application) : ViewModel() {
                 estimatedMinutes = etaMinutes,
                 distanceMeters = distM,
                 status = "ASSIGNED",
-                notes = notes.trim()
+                notes = notes.trim(),
+                selectedRouteIndex = selectedRouteIndex,
+                selectedRouteName = selectedRouteName
             )
 
             val result = repository.assignDestinationTask(task)

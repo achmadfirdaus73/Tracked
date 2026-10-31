@@ -22,16 +22,129 @@ object RoadNetworkEngine {
         val distanceMeters: Double
     )
 
-    // In-memory cache for OSRM route segments and snapped coordinates
+    data class RouteOption(
+        val routeIndex: Int,
+        val label: String,
+        val distanceMeters: Double,
+        val durationSeconds: Double,
+        val summaryRoads: String,
+        val points: List<Pair<Double, Double>>
+    )
+
+    // In-memory cache for OSRM route segments and alternative routes
     private val routeSegmentCache = mutableMapOf<String, List<Pair<Double, Double>>>()
+    private val alternativeRoutesCache = mutableMapOf<String, List<RouteOption>>()
     private val snapPointCache = mutableMapOf<String, SnappedPoint>()
 
     /**
-     * Fetches exact road-following route geometry between a starting point and destination.
+     * Fetches up to 3 alternative road-following routes between start point and destination.
      * STRICT TOLL ROAD ENFORCEMENT:
      * - MOTORCYCLE, BICYCLE & WALK: NEVER route via toll roads / motorways (jalan tol bebas hambatan).
      *   Strictly routes via surface arterial roads, flyovers, and local streets!
      * - CAR & TRUCK: Standard driving route (tollways allowed).
+     */
+    suspend fun fetchAlternativeRoutes(
+        startLat: Double,
+        startLng: Double,
+        destLat: Double,
+        destLng: Double,
+        vehicleType: VehicleType = VehicleType.MOTORCYCLE
+    ): List<RouteOption> = withContext(Dispatchers.IO) {
+        val cacheKey = "alt_${vehicleType.name}_${(startLat * 1000).roundToInt()},${(startLng * 1000).roundToInt()}_${(destLat * 1000).roundToInt()},${(destLng * 1000).roundToInt()}"
+        alternativeRoutesCache[cacheKey]?.let { return@withContext it }
+
+        val osrmProfile = when (vehicleType) {
+            VehicleType.WALK -> "foot"
+            VehicleType.BICYCLE, VehicleType.MOTORCYCLE -> "bicycle"
+            VehicleType.CAR, VehicleType.TRUCK -> "driving"
+        }
+
+        try {
+            // Request up to 3 alternative routes from OSRM
+            val urlString = "https://router.project-osrm.org/route/v1/$osrmProfile/$startLng,$startLat;$destLng,$destLat?alternatives=3&overview=full&geometries=geojson"
+            val url = URL(urlString)
+            val connection = (url.openConnection() as HttpURLConnection).apply {
+                connectTimeout = 3500
+                readTimeout = 3500
+                setRequestProperty("User-Agent", "GeoTrack-Enterprise/3.0")
+            }
+
+            if (connection.responseCode == 200) {
+                val response = connection.inputStream.bufferedReader().use { it.readText() }
+                val json = JSONObject(response)
+                if (json.optString("code") == "Ok") {
+                    val routes = json.optJSONArray("routes")
+                    if (routes != null && routes.length() > 0) {
+                        val resultList = mutableListOf<RouteOption>()
+                        val maxRoutes = minOf(3, routes.length())
+                        for (r in 0 until maxRoutes) {
+                            val routeObj = routes.getJSONObject(r)
+                            val dist = routeObj.optDouble("distance", 0.0)
+                            val dur = routeObj.optDouble("duration", 0.0)
+                            var roadSummary = ""
+                            val legs = routeObj.optJSONArray("legs")
+                            if (legs != null && legs.length() > 0) {
+                                val leg0 = legs.getJSONObject(0)
+                                roadSummary = leg0.optString("summary", "")
+                            }
+                            val geometry = routeObj.getJSONObject("geometry")
+                            val coordinates = geometry.getJSONArray("coordinates")
+                            val coords = mutableListOf<Pair<Double, Double>>()
+                            for (i in 0 until coordinates.length()) {
+                                val coord = coordinates.getJSONArray(i)
+                                coords.add(Pair(coord.getDouble(1), coord.getDouble(0)))
+                            }
+                            if (coords.size >= 2) {
+                                val label = when (r) {
+                                    0 -> "Rute 1 (Tercepat & Utama)"
+                                    1 -> "Rute 2 (Alternatif A)"
+                                    2 -> "Rute 3 (Alternatif B)"
+                                    else -> "Rute ${r + 1}"
+                                }
+                                resultList.add(
+                                    RouteOption(
+                                        routeIndex = r,
+                                        label = label,
+                                        distanceMeters = dist,
+                                        durationSeconds = dur,
+                                        summaryRoads = if (roadSummary.isNotBlank()) "via $roadSummary" else "Jalur Reguler",
+                                        points = coords
+                                    )
+                                )
+                            }
+                        }
+                        if (resultList.isNotEmpty()) {
+                            alternativeRoutesCache[cacheKey] = resultList
+                            routeSegmentCache["route_${vehicleType.name}_${(startLat * 1000).roundToInt()},${(startLng * 1000).roundToInt()}_${(destLat * 1000).roundToInt()},${(destLng * 1000).roundToInt()}"] = resultList.first().points
+                            return@withContext resultList
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
+        // Fallback: 1 route using centripetal spline
+        val fallbackPoints = generateCentripetalSplineRoute(
+            listOf(Pair(startLat, startLng), Pair(destLat, destLng)),
+            segmentsPerSpan = 8
+        )
+        val dist = calculateDistanceMeters(startLat, startLng, destLat, destLng)
+        val single = listOf(
+            RouteOption(
+                routeIndex = 0,
+                label = "Rute 1 (Jalur Utama)",
+                distanceMeters = dist,
+                durationSeconds = (dist / 1000.0) / 25.0 * 3600.0,
+                summaryRoads = "Jalur Utama",
+                points = fallbackPoints
+            )
+        )
+        alternativeRoutesCache[cacheKey] = single
+        return@withContext single
+    }
+
+    /**
+     * Fetches exact road-following route geometry between a starting point and destination.
      */
     suspend fun fetchRoadRoute(
         startLat: Double,
@@ -43,53 +156,13 @@ object RoadNetworkEngine {
         val cacheKey = "route_${vehicleType.name}_${(startLat * 1000).roundToInt()},${(startLng * 1000).roundToInt()}_${(destLat * 1000).roundToInt()},${(destLng * 1000).roundToInt()}"
         routeSegmentCache[cacheKey]?.let { return@withContext it }
 
-        // Select OSRM profile:
-        // - 'bicycle' profile strictly avoids toll roads and motorways, ideal for Indonesian motorcycles & bicycles!
-        // - 'foot' profile strictly avoids toll roads and motorways for pedestrians.
-        // - 'driving' profile for cars and commercial trucks.
-        val osrmProfile = when (vehicleType) {
-            VehicleType.WALK -> "foot"
-            VehicleType.BICYCLE, VehicleType.MOTORCYCLE -> "bicycle"
-            VehicleType.CAR, VehicleType.TRUCK -> "driving"
-        }
-
-        try {
-            val urlString = "https://router.project-osrm.org/route/v1/$osrmProfile/$startLng,$startLat;$destLng,$destLat?overview=full&geometries=geojson"
-            val url = URL(urlString)
-            val connection = (url.openConnection() as HttpURLConnection).apply {
-                connectTimeout = 3000
-                readTimeout = 3000
-                setRequestProperty("User-Agent", "GeoTrack-Enterprise/3.0")
-            }
-
-            if (connection.responseCode == 200) {
-                val response = connection.inputStream.bufferedReader().use { it.readText() }
-                val json = JSONObject(response)
-                if (json.optString("code") == "Ok") {
-                    val routes = json.optJSONArray("routes")
-                    if (routes != null && routes.length() > 0) {
-                        val routeObj = routes.getJSONObject(0)
-                        val geometry = routeObj.getJSONObject("geometry")
-                        val coordinates = geometry.getJSONArray("coordinates")
-                        val result = mutableListOf<Pair<Double, Double>>()
-                        for (i in 0 until coordinates.length()) {
-                            val coord = coordinates.getJSONArray(i)
-                            result.add(Pair(coord.getDouble(1), coord.getDouble(0)))
-                        }
-                        if (result.size >= 2) {
-                            routeSegmentCache[cacheKey] = result
-                            return@withContext result
-                        }
-                    }
-                }
-            }
-        } catch (_: Exception) {}
-
-        // Fallback: If network fails, generate smooth spline curve route
-        return@withContext generateCentripetalSplineRoute(
+        val routes = fetchAlternativeRoutes(startLat, startLng, destLat, destLng, vehicleType)
+        val pts = routes.firstOrNull()?.points ?: generateCentripetalSplineRoute(
             listOf(Pair(startLat, startLng), Pair(destLat, destLng)),
             segmentsPerSpan = 8
         )
+        routeSegmentCache[cacheKey] = pts
+        return@withContext pts
     }
 
     /**

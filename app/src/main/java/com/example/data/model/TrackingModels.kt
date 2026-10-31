@@ -102,7 +102,9 @@ data class DestinationTask(
     val status: String = "ASSIGNED", // "ASSIGNED", "ARRIVED", "CANCELLED"
     val arrivedAt: Long? = null,
     val actualDurationMinutes: Int? = null,
-    val notes: String = ""
+    val notes: String = "",
+    val selectedRouteIndex: Int = 0,
+    val selectedRouteName: String = "Rute 1 (Tercepat)"
 )
 
 data class UserProfile(
