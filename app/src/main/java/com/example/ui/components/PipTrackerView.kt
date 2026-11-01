@@ -165,9 +165,10 @@ fun PipTrackerView(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = user.vehicleType.iconEmoji,
-                        fontSize = 12.sp
+                    VehicleIcon(
+                        vehicleType = user.vehicleType,
+                        tint = Color.White,
+                        size = 14.dp
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(

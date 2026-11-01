@@ -23,17 +23,22 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddLocationAlt
 import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.BatteryFull
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ExitToApp
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.PauseCircle
@@ -43,8 +48,11 @@ import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.StopCircle
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Warning
+import com.example.ui.components.VehicleIcon
+import com.example.ui.components.getVectorIcon
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -213,8 +221,15 @@ fun AdminDashboardScreen(
                             modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            Icon(
+                                imageVector = Icons.Default.Bolt,
+                                contentDescription = null,
+                                tint = if (mqttConnected) GeoCyanAccent else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(12.dp)
+                            )
+                            Spacer(modifier = Modifier.width(3.dp))
                             Text(
-                                text = if (mqttConnected) "⚡ MQTT Live" else "⚡ MQTT...",
+                                text = if (mqttConnected) "MQTT Live" else "MQTT...",
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = if (mqttConnected) GeoCyanAccent else MaterialTheme.colorScheme.onSurfaceVariant
@@ -222,7 +237,7 @@ fun AdminDashboardScreen(
                         }
                     }
                     Spacer(modifier = Modifier.width(4.dp))
-                    // Fleet Status Pill (Online / Standby Counts moved to TopAppBar)
+                    // Fleet Status Pill (Online / Standby Counts)
                     val onlineCount = users.count { it.isSharingLocation }
                     val standbyCount = users.size - onlineCount
                     Surface(
@@ -233,9 +248,13 @@ fun AdminDashboardScreen(
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("🟢 $onlineCount", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = StatusGreen)
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("⚪ $standbyCount", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Box(modifier = Modifier.size(7.dp).background(StatusGreen, CircleShape))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("$onlineCount", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = StatusGreen)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Box(modifier = Modifier.size(7.dp).background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f), CircleShape))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("$standbyCount", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                     Spacer(modifier = Modifier.width(4.dp))
@@ -338,7 +357,7 @@ fun AdminDashboardScreen(
                                     showSetDestinationDialog = true
                                 }
                             } else null,
-                            userLabel = if (activeSelectedUser?.hasFakeGpsAlert == true) "⚠️ ${activeSelectedUser.fullName} [FAKE GPS]" else activeSelectedUser?.fullName ?: "Armada",
+                            userLabel = if (activeSelectedUser?.hasFakeGpsAlert == true) "[FAKE GPS] ${activeSelectedUser.fullName}" else activeSelectedUser?.fullName ?: "Armada",
                             vehicleType = activeSelectedUser?.vehicleType ?: VehicleType.MOTORCYCLE,
                             isLiveTracking = activeSelectedUser?.isSharingLocation ?: true,
                             modifier = Modifier.fillMaxSize()
@@ -367,7 +386,12 @@ fun AdminDashboardScreen(
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
                                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                                            Text("🎯", fontSize = 22.sp)
+                                            Icon(
+                                                imageVector = Icons.Default.Place,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(24.dp)
+                                            )
                                             Spacer(modifier = Modifier.width(8.dp))
                                             Column {
                                                 Text(
@@ -414,10 +438,10 @@ fun AdminDashboardScreen(
                                                 horizontalArrangement = Arrangement.SpaceBetween
                                             ) {
                                                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                                                    Text(selectedEmp.vehicleType.iconEmoji, fontSize = 18.sp)
+                                                    VehicleIcon(selectedEmp.vehicleType, size = 18.dp, tint = GeoBluePrimary)
                                                     Spacer(modifier = Modifier.width(6.dp))
                                                     Text(
-                                                        text = "${selectedEmp.fullName} • ${selectedEmp.vehicleType.label}${activeUserTask?.let { " • 🎯 ${it.destinationName}" } ?: ""}",
+                                                        text = "${selectedEmp.fullName} • ${selectedEmp.vehicleType.label}${activeUserTask?.let { " • Tujuan: ${it.destinationName}" } ?: ""}",
                                                         style = MaterialTheme.typography.titleSmall,
                                                         fontWeight = FontWeight.Bold,
                                                         fontSize = 12.sp,
@@ -429,13 +453,23 @@ fun AdminDashboardScreen(
                                                     shape = RoundedCornerShape(8.dp),
                                                     color = GeoBluePrimary.copy(alpha = 0.12f)
                                                 ) {
-                                                    Text(
-                                                        text = "▼ Detail",
-                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                                                        fontSize = 10.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = GeoBluePrimary
-                                                    )
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = "Detail",
+                                                            fontSize = 10.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = GeoBluePrimary
+                                                        )
+                                                        Icon(
+                                                            imageVector = Icons.Default.ExpandMore,
+                                                            contentDescription = null,
+                                                            tint = GeoBluePrimary,
+                                                            modifier = Modifier.size(13.dp)
+                                                        )
+                                                    }
                                                 }
                                             }
                                         }
@@ -463,7 +497,7 @@ fun AdminDashboardScreen(
                                                             color = GeoBluePrimary.copy(alpha = 0.12f)
                                                         ) {
                                                             Box(contentAlignment = Alignment.Center) {
-                                                                Text(selectedEmp.vehicleType.iconEmoji, fontSize = 18.sp)
+                                                                VehicleIcon(selectedEmp.vehicleType, size = 20.dp, tint = GeoBluePrimary)
                                                             }
                                                         }
                                                         Spacer(modifier = Modifier.width(8.dp))
@@ -504,7 +538,7 @@ fun AdminDashboardScreen(
                                                                 )
                                                                 Spacer(modifier = Modifier.width(3.dp))
                                                                 Text(
-                                                                    text = "${selectedEmp.batteryLevel}%${if (selectedEmp.isCharging) " ⚡" else ""} • Unit ${selectedEmp.unitCode} • ${selectedEmp.vehicleType.label}",
+                                                                    text = "${selectedEmp.batteryLevel}%${if (selectedEmp.isCharging) " (Charging)" else ""} • Unit ${selectedEmp.unitCode} • ${selectedEmp.vehicleType.label}",
                                                                     style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp),
                                                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                                                 )
@@ -542,7 +576,12 @@ fun AdminDashboardScreen(
                                                             onClick = { isAdminOverlayCollapsed = true },
                                                             modifier = Modifier.size(28.dp)
                                                         ) {
-                                                            Text("▲", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                            Icon(
+                                                                imageVector = Icons.Default.ExpandLess,
+                                                                contentDescription = "Collapse",
+                                                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                                modifier = Modifier.size(18.dp)
+                                                            )
                                                         }
                                                     }
                                                 }
@@ -562,7 +601,12 @@ fun AdminDashboardScreen(
                                                             horizontalArrangement = Arrangement.SpaceBetween
                                                         ) {
                                                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                                                                Text(if (task.status == "ARRIVED") "✅" else "🎯", fontSize = 16.sp)
+                                                                Icon(
+                                                                    imageVector = if (task.status == "ARRIVED") Icons.Default.CheckCircle else Icons.Default.Place,
+                                                                    contentDescription = null,
+                                                                    tint = if (task.status == "ARRIVED") StatusGreen else GeoBluePrimary,
+                                                                    modifier = Modifier.size(18.dp)
+                                                                )
                                                                 Spacer(modifier = Modifier.width(6.dp))
                                                                 Column {
                                                                     Text(
@@ -666,7 +710,12 @@ fun AdminDashboardScreen(
                                                         shape = RoundedCornerShape(8.dp),
                                                         contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
                                                     ) {
-                                                        Text("🛑", fontSize = 12.sp)
+                                                        Icon(
+                                                            imageVector = Icons.Default.StopCircle,
+                                                            contentDescription = null,
+                                                            tint = StatusRed,
+                                                            modifier = Modifier.size(14.dp)
+                                                        )
                                                         Spacer(modifier = Modifier.width(4.dp))
                                                         Text(
                                                             "Titik Berhenti (${detectedStops.size})",
@@ -718,7 +767,7 @@ fun AdminDashboardScreen(
                                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Text(usr.vehicleType.iconEmoji, fontSize = 14.sp)
+                                                VehicleIcon(usr.vehicleType, size = 14.dp, tint = if (isSel) Color.White else GeoBluePrimary)
                                                 Spacer(modifier = Modifier.width(4.dp))
                                                 Text(
                                                     text = usr.fullName,
@@ -828,11 +877,20 @@ fun AdminDashboardScreen(
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                         ) {
                             Column(modifier = Modifier.fillMaxWidth().padding(14.dp)) {
-                                Text(
-                                    text = "🛑 Riwayat Titik Berhenti (${detectedStops.size} Titik)",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.StopCircle,
+                                        contentDescription = null,
+                                        tint = StatusRed,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Riwayat Titik Berhenti (${detectedStops.size} Titik)",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
                                 Text(
                                     text = "Mendeteksi secara otomatis saat armada berhenti 5 hingga 10+ menit",
                                     style = MaterialTheme.typography.bodySmall,
@@ -866,7 +924,7 @@ fun AdminDashboardScreen(
                                                     Spacer(modifier = Modifier.width(10.dp))
                                                     Column {
                                                         Text(
-                                                            text = "🛑 Berhenti: ${stop.durationMinutes} Menit",
+                                                            text = "Berhenti: ${stop.durationMinutes} Menit",
                                                             fontWeight = FontWeight.Bold,
                                                             fontSize = 13.sp,
                                                             color = StatusRed
@@ -1040,7 +1098,7 @@ fun AdminDashboardScreen(
                                                 horizontalArrangement = Arrangement.SpaceBetween
                                             ) {
                                                 Text(
-                                                    text = if (isMockAlert) "⚠️ FAKE GPS: ${alt.userName}" else "${alt.eventType} - ${alt.geofenceName}",
+                                                    text = if (isMockAlert) "FAKE GPS: ${alt.userName}" else "${alt.eventType} - ${alt.geofenceName}",
                                                     fontWeight = FontWeight.Bold,
                                                     fontSize = 13.sp,
                                                     color = if (isMockAlert) StatusRed else MaterialTheme.colorScheme.onSurface
@@ -1120,7 +1178,7 @@ fun AdminDashboardScreen(
                                                     .background(GeoBluePrimary.copy(alpha = 0.12f), CircleShape),
                                                 contentAlignment = Alignment.Center
                                             ) {
-                                                Text(usr.vehicleType.iconEmoji, fontSize = 22.sp)
+                                                VehicleIcon(usr.vehicleType, size = 22.dp, tint = GeoBluePrimary)
                                             }
                                             Spacer(modifier = Modifier.width(12.dp))
                                             Column(modifier = Modifier.weight(1f)) {
@@ -1134,14 +1192,24 @@ fun AdminDashboardScreen(
                                                     style = MaterialTheme.typography.bodySmall,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Text(
+                                                        text = "Tipe: ",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = GeoBluePrimary,
+                                                        fontWeight = FontWeight.Medium
+                                                    )
+                                                    VehicleIcon(usr.vehicleType, size = 13.dp, tint = GeoBluePrimary)
+                                                    Spacer(modifier = Modifier.width(3.dp))
+                                                    Text(
+                                                        text = usr.vehicleType.label,
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = GeoBluePrimary,
+                                                        fontWeight = FontWeight.Medium
+                                                    )
+                                                }
                                                 Text(
-                                                    text = "Tipe: ${usr.vehicleType.iconEmoji} ${usr.vehicleType.label}",
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = GeoBluePrimary,
-                                                    fontWeight = FontWeight.Medium
-                                                )
-                                                Text(
-                                                    text = "Baterai HP: ${usr.batteryLevel}%${if (usr.isCharging) " ⚡ (Charging)" else ""}",
+                                                    text = "Baterai HP: ${usr.batteryLevel}%${if (usr.isCharging) " (Charging)" else ""}",
                                                     style = MaterialTheme.typography.bodySmall,
                                                     color = when {
                                                         usr.isCharging -> StatusGreen
@@ -1151,12 +1219,23 @@ fun AdminDashboardScreen(
                                                     },
                                                     fontWeight = FontWeight.SemiBold
                                                 )
-                                                Text(
-                                                    text = if (usr.hasFakeGpsAlert) "⚠️ FAKE GPS TERDETEKSI" else if (usr.isSharingLocation) "🟢 Live Aktif" else "🔴 Offline",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = if (usr.hasFakeGpsAlert) StatusRed else if (usr.isSharingLocation) StatusGreen else Color.Gray,
-                                                    fontWeight = FontWeight.Bold
-                                                )
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(7.dp)
+                                                            .background(
+                                                                if (usr.hasFakeGpsAlert) StatusRed else if (usr.isSharingLocation) StatusGreen else Color.Gray,
+                                                                CircleShape
+                                                            )
+                                                    )
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text(
+                                                        text = if (usr.hasFakeGpsAlert) "FAKE GPS TERDETEKSI" else if (usr.isSharingLocation) "Live Aktif" else "Offline",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = if (usr.hasFakeGpsAlert) StatusRed else if (usr.isSharingLocation) StatusGreen else Color.Gray,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
+                                                }
                                             }
                                             Row(verticalAlignment = Alignment.CenterVertically) {
                                                 TextButton(
@@ -1376,7 +1455,14 @@ fun AdminDashboardScreen(
                             FilterChip(
                                 selected = selectedVehicle == vType,
                                 onClick = { selectedVehicle = vType },
-                                label = { Text("${vType.iconEmoji} ${vType.label}") },
+                                leadingIcon = {
+                                    VehicleIcon(
+                                        vehicleType = vType,
+                                        size = 16.dp,
+                                        tint = if (selectedVehicle == vType) Color.White else GeoBluePrimary
+                                    )
+                                },
+                                label = { Text(vType.label) },
                                 colors = FilterChipDefaults.filterChipColors(
                                     selectedContainerColor = GeoBluePrimary,
                                     selectedLabelColor = Color.White
@@ -1441,7 +1527,11 @@ fun AdminDashboardScreen(
                                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(vType.iconEmoji, fontSize = 24.sp)
+                                    VehicleIcon(
+                                        vehicleType = vType,
+                                        size = 24.dp,
+                                        tint = if (selectedVehicle == vType) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(vType.label, fontWeight = FontWeight.SemiBold)
@@ -1553,7 +1643,12 @@ fun AdminDashboardScreen(
             onDismissRequest = { showSetDestinationDialog = false },
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("🎯", fontSize = 24.sp)
+                    Icon(
+                        imageVector = Icons.Default.Place,
+                        contentDescription = null,
+                        tint = GeoBluePrimary,
+                        modifier = Modifier.size(24.dp)
+                    )
                     Spacer(modifier = Modifier.width(8.dp))
                     Column {
                         Text("Konfirmasi Tujuan & Pilihan Rute", fontWeight = FontWeight.Bold)
@@ -1590,11 +1685,15 @@ fun AdminDashboardScreen(
                                     fontWeight = FontWeight.Bold,
                                     color = GeoBluePrimary
                                 )
-                                Text(
-                                    text = "${selectedEmp.vehicleType.iconEmoji} ${selectedEmp.vehicleType.label}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.SemiBold
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    VehicleIcon(selectedEmp.vehicleType, size = 14.dp, tint = GeoBluePrimary)
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text(
+                                        text = selectedEmp.vehicleType.label,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
                             }
                             Spacer(modifier = Modifier.height(6.dp))
                             Row(
@@ -1704,12 +1803,21 @@ fun AdminDashboardScreen(
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
                                             if (isNonToll) {
-                                                Text(
-                                                    text = "🛡️ Bebas Jalan Tol (${selectedEmp.vehicleType.iconEmoji})",
-                                                    fontSize = 10.sp,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    color = Color(0xFF15803D)
-                                                )
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Security,
+                                                        contentDescription = null,
+                                                        tint = Color(0xFF15803D),
+                                                        modifier = Modifier.size(12.dp)
+                                                    )
+                                                    Spacer(modifier = Modifier.width(3.dp))
+                                                    Text(
+                                                        text = "Bebas Jalan Tol (${selectedEmp.vehicleType.label})",
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        color = Color(0xFF15803D)
+                                                    )
+                                                }
                                             }
                                         }
                                     }
@@ -1783,7 +1891,7 @@ fun AdminDashboardScreen(
                     ) {
                         Icon(Icons.Default.Place, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("📍 Ubah Titik Pin di Peta (Ketuk Ulang)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("Ubah Titik Pin di Peta (Ketuk Ulang)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             },
@@ -1806,7 +1914,15 @@ fun AdminDashboardScreen(
                     },
                     modifier = Modifier.testTag("btn_confirm_assign_task")
                 ) {
-                    Text("🚀 Kirim Tugas ke Driver", fontWeight = FontWeight.Bold)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Send,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Kirim Tugas ke Driver", fontWeight = FontWeight.Bold)
+                    }
                 }
             },
             dismissButton = {
@@ -1824,7 +1940,12 @@ fun AdminDashboardScreen(
             onDismissRequest = { showStopPointsSheet = false },
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("🛑", fontSize = 22.sp)
+                    Icon(
+                        imageVector = Icons.Default.StopCircle,
+                        contentDescription = null,
+                        tint = StatusRed,
+                        modifier = Modifier.size(24.dp)
+                    )
                     Spacer(modifier = Modifier.width(8.dp))
                     Column {
                         Text("Titik Berhenti Driver", fontWeight = FontWeight.Bold)
@@ -1857,7 +1978,12 @@ fun AdminDashboardScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("🟢", fontSize = 32.sp)
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    tint = StatusGreen,
+                                    modifier = Modifier.size(36.dp)
+                                )
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text(
                                     "Tidak Ada Titik Berhenti Lama",

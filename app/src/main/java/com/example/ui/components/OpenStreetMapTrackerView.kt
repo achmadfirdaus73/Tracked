@@ -364,7 +364,7 @@ fun OpenStreetMapTrackerView(
                         val startMarker = Marker(map).apply {
                             position = startGeo
                             icon = cachedStartDrawable
-                            title = if (segIdx == 0) "🏁 Titik Awal Keberangkatan" else "🏁 Mulai Trip #${segIdx + 1}"
+                            title = if (segIdx == 0) "Titik Awal Keberangkatan" else "Mulai Trip #${segIdx + 1}"
                             snippet = if (startPt != null) "Mulai: ${StopPointDetector.formatTime(startPt.timestamp)}" else null
                             setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
                         }
@@ -377,7 +377,7 @@ fun OpenStreetMapTrackerView(
                     val stopMarker = Marker(map).apply {
                         position = GeoPoint(stop.latitude, stop.longitude)
                         icon = MapMarkerHelper.createStopMarkerDrawable(context, stop.durationMinutes)
-                        title = "🛑 Titik Berhenti: ${stop.durationMinutes} Menit"
+                        title = "Titik Berhenti: ${stop.durationMinutes} Menit"
                         snippet = "Waktu: ${StopPointDetector.formatTime(stop.startTimestamp)} - ${StopPointDetector.formatTime(stop.endTimestamp)}"
                         setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                     }
@@ -390,7 +390,7 @@ fun OpenStreetMapTrackerView(
                     val userMarker = Marker(map).apply {
                         position = GeoPoint(currentPoint.latitude, currentPoint.longitude)
                         icon = cachedVehicleDrawable
-                        title = if (currentPoint.isMock) "⚠️ $userLabel [FAKE GPS!]" else "${vehicleType.iconEmoji} $userLabel (${vehicleType.label})"
+                        title = if (currentPoint.isMock) "$userLabel [FAKE GPS!]" else "$userLabel (${vehicleType.label})"
                         snippet = String.format(
                             "%.0f km/h | %s | Akurasi: ±%.1fm",
                             currentPoint.speedKmh,
@@ -468,9 +468,9 @@ fun OpenStreetMapTrackerView(
                     val destMarker = Marker(map).apply {
                         position = destGeo
                         icon = MapMarkerHelper.createDestinationMarkerDrawable(context, destinationTask.destinationName, isArrived)
-                        title = "🎯 Tujuan: ${destinationTask.destinationName}"
+                        title = "Tujuan: ${destinationTask.destinationName}"
                         snippet = if (isArrived) {
-                            "✅ Telah Tiba dalam ${destinationTask.actualDurationMinutes ?: 0} menit"
+                            "Telah Tiba dalam ${destinationTask.actualDurationMinutes ?: 0} menit"
                         } else {
                             "Estimasi: ~${destinationTask.estimatedMinutes} menit • ${destinationTask.notes.ifBlank { "Tugas Rute" }}"
                         }
@@ -515,23 +515,32 @@ fun OpenStreetMapTrackerView(
                         Column {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    text = if (currentPoint?.isMock == true) "⚠️ Fake GPS"
+                                    text = if (currentPoint?.isMock == true) "Fake GPS"
                                     else if (isLiveTracking) "Live Tracking" else "Standby",
                                     style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                                     color = if (currentPoint?.isMock == true) StatusRed else MaterialTheme.colorScheme.onSurface
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "• ${vehicleType.iconEmoji} ${vehicleType.label}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = GeoBluePrimary,
-                                    fontWeight = FontWeight.SemiBold
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "• ",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = GeoBluePrimary
+                                    )
+                                    VehicleIcon(vehicleType = vehicleType, size = 12.dp, tint = GeoBluePrimary)
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text(
+                                        text = vehicleType.label,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = GeoBluePrimary,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
                             }
                             if (currentPoint != null) {
                                 Text(
                                     text = "${currentPoint.speedKmh.toInt()} km/h • ±${currentPoint.accuracyMeters.toInt()}m" +
-                                            if (detectedStops.isNotEmpty()) " • 🛑 ${detectedStops.size} Stop" else "",
+                                            if (detectedStops.isNotEmpty()) " • ${detectedStops.size} Stop" else "",
                                     style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )

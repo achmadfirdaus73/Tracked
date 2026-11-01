@@ -320,7 +320,7 @@ fun InteractiveMapView(
                         color = zoneColor.copy(alpha = 0.9f).hashCode()
                         style = android.graphics.Paint.Style.FILL
                     }
-                    val text = "🛡️ ${fence.name} (${fence.radiusMeters.toInt()}m)"
+                    val text = "${fence.name} (${fence.radiusMeters.toInt()}m)"
                     val bounds = android.graphics.Rect()
                     paint.getTextBounds(text, 0, text.length, bounds)
                     val bgRect = android.graphics.RectF(
@@ -403,7 +403,7 @@ fun InteractiveMapView(
                             color = android.graphics.Color.parseColor("#059669")
                             style = android.graphics.Paint.Style.FILL
                         }
-                        val text = if (segIdx == 0) "🏁 START" else "🏁 TRIP ${segIdx + 1}"
+                        val text = if (segIdx == 0) "START" else "TRIP ${segIdx + 1}"
                         val bounds = android.graphics.Rect()
                         paint.getTextBounds(text, 0, text.length, bounds)
                         val bgRect = android.graphics.RectF(
@@ -448,7 +448,7 @@ fun InteractiveMapView(
                             color = android.graphics.Color.parseColor("#DC2626")
                             style = android.graphics.Paint.Style.FILL
                         }
-                        val text = "🛑 ${stop.durationMinutes}m"
+                        val text = "STOP ${stop.durationMinutes}m"
                         val bounds = android.graphics.Rect()
                         paint.getTextBounds(text, 0, text.length, bounds)
                         val bgRect = android.graphics.RectF(
@@ -539,7 +539,7 @@ fun InteractiveMapView(
                         style = android.graphics.Paint.Style.FILL
                     }
                     val speedText = String.format("%.0f km/h", currentPoint.speedKmh)
-                    val label = "${vehicleType.iconEmoji} $userLabel | $speedText"
+                    val label = "$userLabel (${vehicleType.label}) | $speedText"
                     val bounds = android.graphics.Rect()
                     paint.getTextBounds(label, 0, label.length, bounds)
                     val bgRect = android.graphics.RectF(
@@ -618,7 +618,7 @@ fun InteractiveMapView(
                         color = if (isArrived) android.graphics.Color.parseColor("#059669") else android.graphics.Color.parseColor("#7C3AED")
                         style = android.graphics.Paint.Style.FILL
                     }
-                    val label = if (isArrived) "✅ Tiba: ${destinationTask.destinationName}" else "🎯 ${destinationTask.destinationName} (~${destinationTask.estimatedMinutes}m)"
+                    val label = if (isArrived) "TIBA: ${destinationTask.destinationName}" else "${destinationTask.destinationName} (~${destinationTask.estimatedMinutes}m)"
                     val bounds = android.graphics.Rect()
                     paint.getTextBounds(label, 0, label.length, bounds)
                     val bgRect = android.graphics.RectF(

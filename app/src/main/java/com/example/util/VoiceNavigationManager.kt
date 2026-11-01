@@ -13,16 +13,16 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 enum class TurnType(val iconEmoji: String, val defaultText: String) {
-    DEPART("🚀", "Mulai perjalanan"),
-    STRAIGHT("⬆️", "Lurus terus"),
-    SLIGHT_LEFT("↖️", "Sedikit ke kiri"),
-    SLIGHT_RIGHT("↗️", "Sedikit ke kanan"),
-    TURN_LEFT("⬅️", "Belok kiri"),
-    TURN_RIGHT("➡️", "Belok kanan"),
-    SHARP_LEFT("↰", "Belok tajam ke kiri"),
-    SHARP_RIGHT("↱", "Belok tajam ke kanan"),
-    UTURN("↩️", "Putar balik"),
-    ARRIVE("🎯", "Tiba di tujuan")
+    DEPART("", "Mulai perjalanan"),
+    STRAIGHT("", "Lurus terus"),
+    SLIGHT_LEFT("", "Sedikit ke kiri"),
+    SLIGHT_RIGHT("", "Sedikit ke kanan"),
+    TURN_LEFT("", "Belok kiri"),
+    TURN_RIGHT("", "Belok kanan"),
+    SHARP_LEFT("", "Belok tajam ke kiri"),
+    SHARP_RIGHT("", "Belok tajam ke kanan"),
+    UTURN("", "Putar balik"),
+    ARRIVE("", "Tiba di tujuan")
 }
 
 data class NavigationManeuver(

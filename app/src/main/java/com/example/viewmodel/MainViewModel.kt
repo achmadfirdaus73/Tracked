@@ -435,7 +435,7 @@ class MainViewModel(private val application: Application) : ViewModel() {
                 val actualMinutes = maxOf(1, ((System.currentTimeMillis() - task.assignedAt) / 60000).toInt())
                 viewModelScope.launch {
                     repository.markTaskArrived(task.taskId, System.currentTimeMillis(), actualMinutes)
-                    _successMessage.value = "🎉 Anda telah tiba di tujuan '${task.destinationName}'! (Waktu tempuh: $actualMinutes menit)"
+                    _successMessage.value = "Anda telah tiba di tujuan '${task.destinationName}'! (Waktu tempuh: $actualMinutes menit)"
 
                     val arrivalAlert = GeofenceAlert(
                         companyId = task.companyId,
@@ -498,7 +498,7 @@ class MainViewModel(private val application: Application) : ViewModel() {
 
             val result = repository.assignDestinationTask(task)
             if (result.isSuccess) {
-                _successMessage.value = "🎯 Titik tujuan '${task.destinationName}' berhasil ditandai & dikirim ke driver! (Estimasi: ~$etaMinutes mnt)"
+                _successMessage.value = "Titik tujuan '${task.destinationName}' berhasil ditandai & dikirim ke driver! (Estimasi: ~$etaMinutes mnt)"
             } else {
                 _errorMessage.value = "Gagal menugaskan titik tujuan"
             }
@@ -517,9 +517,9 @@ class MainViewModel(private val application: Application) : ViewModel() {
             val detected = com.example.util.FakeGpsDetector.findInstalledFakeGpsApps(application)
             _installedFakeApps.value = detected
             if (detected.isNotEmpty()) {
-                _errorMessage.value = "⚠️ Terdeteksi ${detected.size} aplikasi Fake GPS pada perangkat: ${detected.joinToString(", ")}"
+                _errorMessage.value = "Terdeteksi ${detected.size} aplikasi Fake GPS pada perangkat: ${detected.joinToString(", ")}"
             } else {
-                _successMessage.value = "✓ Perangkat Bersih: Tidak ditemukan aplikasi Fake GPS terpasang."
+                _successMessage.value = "Perangkat Bersih: Tidak ditemukan aplikasi Fake GPS terpasang."
             }
         }
     }
@@ -579,7 +579,7 @@ class MainViewModel(private val application: Application) : ViewModel() {
     fun updateEmployeeVehicleType(userId: String, vehicleType: com.example.data.model.VehicleType) {
         viewModelScope.launch {
             repository.updateUserVehicleType(userId, vehicleType)
-            _successMessage.value = "Tipe kendaraan berhasil diubah menjadi ${vehicleType.iconEmoji} ${vehicleType.label}"
+            _successMessage.value = "Tipe kendaraan berhasil diubah menjadi ${vehicleType.label}"
         }
     }
 

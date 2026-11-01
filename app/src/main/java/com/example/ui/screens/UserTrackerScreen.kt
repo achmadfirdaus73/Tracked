@@ -37,10 +37,19 @@ import androidx.compose.material.icons.filled.PinDrop
 import androidx.compose.material.icons.filled.Route
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Navigation
+import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.StopCircle
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.Warning
+import com.example.ui.components.TurnManeuverIcon
+import com.example.ui.components.VehicleIcon
+import com.example.util.TurnType
 import com.example.util.VoiceNavigationManager
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -214,7 +223,7 @@ fun UserTrackerScreen(
                             modifier = Modifier.size(38.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
-                                Text(user.vehicleType.iconEmoji, fontSize = 20.sp)
+                                VehicleIcon(user.vehicleType, size = 22.dp, tint = GeoBluePrimary)
                             }
                         }
                         Spacer(modifier = Modifier.width(10.dp))
@@ -243,13 +252,24 @@ fun UserTrackerScreen(
                                     shape = RoundedCornerShape(4.dp),
                                     color = if (mqttConnected) GeoCyanAccent.copy(alpha = 0.15f) else Color.Gray.copy(alpha = 0.12f)
                                 ) {
-                                    Text(
-                                        text = if (mqttConnected) "⚡ MQTT Live" else "⚡ MQTT...",
-                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
-                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (mqttConnected) GeoCyanAccent else Color.Gray
-                                    )
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Bolt,
+                                            contentDescription = null,
+                                            tint = if (mqttConnected) GeoCyanAccent else Color.Gray,
+                                            modifier = Modifier.size(10.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(2.dp))
+                                        Text(
+                                            text = if (mqttConnected) "MQTT Live" else "MQTT...",
+                                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (mqttConnected) GeoCyanAccent else Color.Gray
+                                        )
+                                    }
                                 }
                             }
                             Text(
@@ -380,7 +400,7 @@ fun UserTrackerScreen(
                         Spacer(modifier = Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "⚠️ PERINGATAN: MOCK LOCATION / FAKE GPS AKTIF",
+                                text = "PERINGATAN: MOCK LOCATION / FAKE GPS AKTIF",
                                 fontWeight = FontWeight.ExtraBold,
                                 fontSize = 12.sp,
                                 color = Color.White
@@ -524,7 +544,12 @@ fun UserTrackerScreen(
                                         modifier = Modifier.weight(1f),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text("🎯", fontSize = 20.sp)
+                                        Icon(
+                                            imageVector = Icons.Default.Place,
+                                            contentDescription = null,
+                                            tint = GeoBluePrimary,
+                                            modifier = Modifier.size(22.dp)
+                                        )
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Column {
                                             Text(
@@ -535,7 +560,7 @@ fun UserTrackerScreen(
                                                 overflow = TextOverflow.Ellipsis
                                             )
                                             val rLabel = activeOpt?.label ?: "Rute ${selectedUserRouteIndex + 1}"
-                                            val infoText = if (isNonToll) "🛡️ $rLabel • $distKm • ~$durM mnt (Bebas Tol)" else "🚗 $rLabel • $distKm • ~$durM mnt"
+                                            val infoText = if (isNonToll) "$rLabel • $distKm • ~$durM mnt (Bebas Tol)" else "$rLabel • $distKm • ~$durM mnt"
                                             Text(
                                                 text = infoText,
                                                 style = MaterialTheme.typography.bodySmall,
@@ -595,7 +620,7 @@ fun UserTrackerScreen(
                                                         horizontalAlignment = Alignment.CenterHorizontally
                                                     ) {
                                                         Text(
-                                                            text = if (rIdx == 0) "⚡ Rute 1" else if (rIdx == 1) "🛣️ Rute 2" else "🛣️ Rute 3",
+                                                            text = "Rute ${rIdx + 1}",
                                                             fontSize = 11.sp,
                                                             fontWeight = FontWeight.Bold,
                                                             color = if (isOptSelected) Color.White else MaterialTheme.colorScheme.onSurface
@@ -660,9 +685,10 @@ fun UserTrackerScreen(
                                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Text(
-                                                    text = guidance.nextManeuver?.turnType?.iconEmoji ?: "⬆️",
-                                                    fontSize = 24.sp
+                                                TurnManeuverIcon(
+                                                    turnType = guidance.nextManeuver?.turnType ?: TurnType.STRAIGHT,
+                                                    tint = GeoBluePrimary,
+                                                    size = 26.dp
                                                 )
                                                 Spacer(modifier = Modifier.width(8.dp))
                                                 Column(modifier = Modifier.weight(1f)) {
@@ -680,7 +706,7 @@ fun UserTrackerScreen(
                                                         overflow = TextOverflow.Ellipsis
                                                     )
                                                     Text(
-                                                        text = if (voiceNavManager.isMuted) "🔇 Suara dimatikan" else "🔊 Panduan Suara Belokan Aktif",
+                                                        text = if (voiceNavManager.isMuted) "Suara panduan dinonaktifkan" else "Panduan Suara Belokan Aktif",
                                                         style = MaterialTheme.typography.labelSmall,
                                                         fontSize = 10.sp,
                                                         color = if (voiceNavManager.isMuted) Color.Gray else StatusGreen
@@ -708,12 +734,21 @@ fun UserTrackerScreen(
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text(
-                                            text = "▶️ Navigasi Aktif (${userRouteOptions.getOrNull(selectedUserRouteIndex)?.label ?: "Rute ${selectedUserRouteIndex + 1}"})",
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = StatusGreen
-                                        )
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                imageVector = Icons.Default.Navigation,
+                                                contentDescription = null,
+                                                tint = StatusGreen,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                text = "Navigasi Aktif (${userRouteOptions.getOrNull(selectedUserRouteIndex)?.label ?: "Rute ${selectedUserRouteIndex + 1}"})",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = StatusGreen
+                                            )
+                                        }
                                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                             OutlinedButton(
                                                 onClick = { isRouteNavigating = false },
@@ -721,7 +756,7 @@ fun UserTrackerScreen(
                                                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                                                 modifier = Modifier.height(26.dp)
                                             ) {
-                                                Text("⚙️ Ubah", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                                Text("Ubah", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                             }
                                             Button(
                                                 onClick = {
@@ -796,12 +831,21 @@ fun UserTrackerScreen(
                             Box(modifier = Modifier.size(3.dp).background(MaterialTheme.colorScheme.outlineVariant, CircleShape))
 
                             // 3. Current Speed
-                            Text(
-                                text = "⚡ ${(currentPt?.speedKmh ?: 0f).toInt()} km/h",
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = GeoBluePrimary
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Speed,
+                                    contentDescription = null,
+                                    tint = GeoBluePrimary,
+                                    modifier = Modifier.size(11.dp)
+                                )
+                                Spacer(modifier = Modifier.width(2.dp))
+                                Text(
+                                    text = "${(currentPt?.speedKmh ?: 0f).toInt()} km/h",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = GeoBluePrimary
+                                )
+                            }
 
                             Box(modifier = Modifier.size(3.dp).background(MaterialTheme.colorScheme.outlineVariant, CircleShape))
 
@@ -812,22 +856,40 @@ fun UserTrackerScreen(
                                 realBattery.percentage <= 50 -> StatusYellow
                                 else -> StatusGreen
                             }
-                            Text(
-                                text = "${if (realBattery.isCharging) "⚡" else "🔋"}${realBattery.percentage}%",
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = batColor
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = if (realBattery.isCharging) Icons.Default.BatteryChargingFull else Icons.Default.BatteryFull,
+                                    contentDescription = null,
+                                    tint = batColor,
+                                    modifier = Modifier.size(11.dp)
+                                )
+                                Spacer(modifier = Modifier.width(2.dp))
+                                Text(
+                                    text = "${realBattery.percentage}%",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = batColor
+                                )
+                            }
 
                             // 5. Stops (if any detected)
                             if (detectedStops.isNotEmpty()) {
                                 Box(modifier = Modifier.size(3.dp).background(MaterialTheme.colorScheme.outlineVariant, CircleShape))
-                                Text(
-                                    text = "🛑 ${detectedStops.size}",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = StatusRed
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.StopCircle,
+                                        contentDescription = null,
+                                        tint = StatusRed,
+                                        modifier = Modifier.size(11.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(2.dp))
+                                    Text(
+                                        text = "${detectedStops.size}",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = StatusRed
+                                    )
+                                }
                             }
                         }
                     }
@@ -1026,7 +1088,12 @@ fun UserTrackerScreen(
             onDismissRequest = { showTaskDialog = false },
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (task.status == "ARRIVED") "✅" else "🎯", fontSize = 22.sp)
+                    Icon(
+                        imageVector = if (task.status == "ARRIVED") Icons.Default.CheckCircle else Icons.Default.Place,
+                        contentDescription = null,
+                        tint = if (task.status == "ARRIVED") StatusGreen else GeoBluePrimary,
+                        modifier = Modifier.size(24.dp)
+                    )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = if (task.status == "ARRIVED") "Telah Tiba di Tujuan" else "Tugas Rute Tujuan",
@@ -1045,7 +1112,7 @@ fun UserTrackerScreen(
                     Spacer(modifier = Modifier.height(6.dp))
                     if (task.status == "ARRIVED") {
                         Text(
-                            text = "🎉 Anda telah sampai di titik lokasi tujuan!\nWaktu tempuh: ${task.actualDurationMinutes ?: 0} menit",
+                            text = "Anda telah sampai di titik lokasi tujuan!\nWaktu tempuh: ${task.actualDurationMinutes ?: 0} menit",
                             fontSize = 12.sp,
                             color = StatusGreen,
                             fontWeight = FontWeight.SemiBold

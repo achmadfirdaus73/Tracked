@@ -51,22 +51,31 @@ object MapMarkerHelper {
         paint.strokeWidth = 6f
         canvas.drawCircle(width / 2f, 55f, 45f, paint)
 
-        // Inner Start badge
+        // Draw crisp vector start flag
+        paint.color = Color.WHITE
+        paint.strokeWidth = 4f
+        paint.style = Paint.Style.STROKE
+        canvas.drawLine(width / 2f - 14f, 28f, width / 2f - 14f, 60f, paint) // flag pole
+        val flagPath = Path().apply {
+            moveTo(width / 2f - 14f, 28f)
+            lineTo(width / 2f + 14f, 38f)
+            lineTo(width / 2f - 14f, 48f)
+            close()
+        }
         paint.style = Paint.Style.FILL
-        paint.textSize = 28f
+        canvas.drawPath(flagPath, paint)
+
+        paint.textSize = 16f
+        paint.color = Color.WHITE
         paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         paint.textAlign = Paint.Align.CENTER
-        canvas.drawText("🏁", width / 2f, 52f, paint)
-
-        paint.textSize = 18f
-        paint.color = Color.WHITE
         canvas.drawText("START", width / 2f, 75f, paint)
 
         return BitmapDrawable(context.resources, bitmap)
     }
 
     /**
-     * Creates a distinct Stop Point marker (Amber-Red Octagon badge: 🛑 5m/10m).
+     * Creates a distinct Stop Point marker (clean vector Stop badge with parking duration).
      */
     fun createStopMarkerDrawable(context: Context, durationMinutes: Int): Drawable {
         val width = 140
@@ -93,24 +102,24 @@ object MapMarkerHelper {
         paint.strokeWidth = 5f
         canvas.drawRoundRect(bgRect, 20f, 20f, paint)
 
-        // Stop icon + Duration text
+        // Duration text & clean STOP label
         paint.style = Paint.Style.FILL
         paint.textAlign = Paint.Align.CENTER
         paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
 
-        paint.textSize = 28f
+        paint.textSize = 26f
         paint.color = Color.WHITE
-        canvas.drawText("🛑 ${durationMinutes}m", width / 2f - 2f, 46f, paint)
+        canvas.drawText("${durationMinutes}m", width / 2f, 46f, paint)
 
-        paint.textSize = 17f
+        paint.textSize = 15f
         paint.color = Color.parseColor("#FEE2E2")
-        canvas.drawText("STOP", width / 2f - 2f, 72f, paint)
+        canvas.drawText("PARKIR", width / 2f, 70f, paint)
 
         return BitmapDrawable(context.resources, bitmap)
     }
 
     /**
-     * Creates a destination task pin marker (🎯 Target pin or ✅ Arrived pin).
+     * Creates a destination task pin marker with crisp vector graphics.
      */
     fun createDestinationMarkerDrawable(
         context: Context,
@@ -148,16 +157,35 @@ object MapMarkerHelper {
         paint.strokeWidth = 5f
         canvas.drawCircle(width / 2f, 52f, 44f, paint)
 
-        // Inner icon & text
+        // Draw crisp vector icon inside pin
+        if (isArrived) {
+            // Draw crisp white checkmark
+            val checkPath = Path().apply {
+                moveTo(width / 2f - 14f, 48f)
+                lineTo(width / 2f - 4f, 58f)
+                lineTo(width / 2f + 16f, 38f)
+            }
+            paint.color = Color.WHITE
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = 6f
+            paint.strokeCap = Paint.Cap.ROUND
+            paint.strokeJoin = Paint.Join.ROUND
+            canvas.drawPath(checkPath, paint)
+        } else {
+            // Draw crisp vector navigation target bullseye
+            paint.color = Color.WHITE
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = 4f
+            canvas.drawCircle(width / 2f, 46f, 15f, paint)
+            canvas.drawCircle(width / 2f, 46f, 7f, paint)
+            paint.style = Paint.Style.FILL
+            canvas.drawCircle(width / 2f, 46f, 3.5f, paint)
+        }
+
         paint.style = Paint.Style.FILL
         paint.textAlign = Paint.Align.CENTER
         paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-
-        paint.textSize = 28f
-        val iconText = if (isArrived) "✅" else "🎯"
-        canvas.drawText(iconText, width / 2f, 48f, paint)
-
-        paint.textSize = 15f
+        paint.textSize = 14f
         paint.color = Color.WHITE
         val label = if (isArrived) "TIBA" else "TUJUAN"
         canvas.drawText(label, width / 2f, 72f, paint)

@@ -231,17 +231,27 @@ fun LocationSearchBar(
                                 shape = RoundedCornerShape(6.dp),
                                 color = if (isNonToll) StatusGreen.copy(alpha = 0.12f) else GeoBluePrimary.copy(alpha = 0.12f)
                             ) {
-                                Text(
-                                    text = if (isNonToll) {
-                                        "${vehicleType.iconEmoji} ${vehicleType.label}: Bebas Jalur Tol (Non-Tol)"
-                                    } else {
-                                        "${vehicleType.iconEmoji} ${vehicleType.label}: Mode Jalur Cepat (Tol Aktif)"
-                                    },
+                                Row(
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isNonToll) StatusGreen else GeoBluePrimary
-                                )
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    VehicleIcon(
+                                        vehicleType = vehicleType,
+                                        size = 13.dp,
+                                        tint = if (isNonToll) StatusGreen else GeoBluePrimary
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = if (isNonToll) {
+                                            "${vehicleType.label}: Bebas Jalur Tol (Non-Tol)"
+                                        } else {
+                                            "${vehicleType.label}: Mode Jalur Cepat (Tol Aktif)"
+                                        },
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isNonToll) StatusGreen else GeoBluePrimary
+                                    )
+                                }
                             }
                         }
                     }

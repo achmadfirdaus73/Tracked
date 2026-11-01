@@ -65,11 +65,11 @@ enum class VehicleType(
     val iconEmoji: String,
     val code: String
 ) {
-    MOTORCYCLE("Motor", "🏍️", "motorcycle"),
-    CAR("Mobil", "🚗", "car"),
-    BICYCLE("Sepeda", "🚲", "bicycle"),
-    TRUCK("Truk", "🚚", "truck"),
-    WALK("Pejalan Kaki", "🚶", "walk");
+    MOTORCYCLE("Motor", "", "motorcycle"),
+    CAR("Mobil", "", "car"),
+    BICYCLE("Sepeda", "", "bicycle"),
+    TRUCK("Truk", "", "truck"),
+    WALK("Pejalan Kaki", "", "walk");
 
     companion object {
         fun fromCode(code: String?): VehicleType {

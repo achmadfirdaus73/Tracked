@@ -159,7 +159,7 @@ class LocationEngine(
             val (activeFences, rawStatusDesc) = GeofenceEngine.evaluateGeofences(effectiveLat, effectiveLng, geofences)
 
             val statusDesc = if (isMock) {
-                "⚠️ FAKE GPS TERDETEKSI: $rawStatusDesc"
+                "PERINGATAN FAKE GPS: $rawStatusDesc"
             } else {
                 rawStatusDesc
             }
@@ -176,7 +176,7 @@ class LocationEngine(
                     timestamp = System.currentTimeMillis(),
                     latitude = lat,
                     longitude = lng,
-                    description = "⚠️ Peringatan: User ${user.fullName} terdeteksi menggunakan aplikasi lokasi palsu/Fake GPS ($mockReason)!",
+                    description = "Peringatan: User ${user.fullName} terdeteksi menggunakan aplikasi lokasi palsu/Fake GPS ($mockReason)!",
                     isSecurityWarning = true
                 )
                 repository.recordGeofenceAlert(mockAlert)
