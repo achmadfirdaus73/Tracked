@@ -37,9 +37,11 @@ import androidx.compose.material.icons.filled.PinDrop
 import androidx.compose.material.icons.filled.Route
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.VolumeOff
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.Warning
+import com.example.util.VoiceNavigationManager
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -142,6 +144,35 @@ fun UserTrackerScreen(
     }
 
     val context = LocalContext.current
+    val voiceNavManager = remember { VoiceNavigationManager(context) }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose {
+            voiceNavManager.destroy()
+        }
+    }
+
+    // Set route points to VoiceNavigationManager when navigation begins or route changes
+    LaunchedEffect(isRouteNavigating, selectedUserRouteIndex, userRouteOptions, effectiveDestination?.destinationName) {
+        if (isRouteNavigating && effectiveDestination != null && userRouteOptions.isNotEmpty()) {
+            val chosenRoute = userRouteOptions.getOrNull(selectedUserRouteIndex) ?: userRouteOptions.first()
+            voiceNavManager.setRoutePoints(chosenRoute.points, effectiveDestination.destinationName)
+        } else if (!isRouteNavigating) {
+            voiceNavManager.stop()
+        }
+    }
+
+    // Continuously update vehicle position for turn-by-turn guidance and voice announcements
+    LaunchedEffect(currentPt?.latitude, currentPt?.longitude, isRouteNavigating, effectiveDestination?.latitude) {
+        if (isRouteNavigating && currentPt != null && effectiveDestination != null) {
+            voiceNavManager.updateVehicleLocation(
+                userLat = currentPt!!.latitude,
+                userLng = currentPt!!.longitude,
+                destLat = effectiveDestination.latitude,
+                destLng = effectiveDestination.longitude
+            )
+        }
+    }
+
     var realBattery by remember { mutableStateOf(BatteryHelper.getBatteryStatus(context)) }
     var showChatSheet by remember { mutableStateOf(false) }
     var showTaskDialog by remember { mutableStateOf(false) }
@@ -615,7 +646,62 @@ fun UserTrackerScreen(
                                         }
                                     }
                                 } else {
-                                    // Active Navigation Mode: Show compact 1-line controls so map is clean & unobstructed!
+                                    // Active Navigation Mode: Turn-by-Turn Guidance & Voice Announcements
+                                    val guidance = voiceNavManager.currentGuidance
+                                    if (guidance != null) {
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Surface(
+                                            shape = RoundedCornerShape(10.dp),
+                                            color = GeoBluePrimary.copy(alpha = 0.10f),
+                                            border = androidx.compose.foundation.BorderStroke(1.dp, GeoBluePrimary.copy(alpha = 0.25f)),
+                                            modifier = Modifier.fillMaxWidth().testTag("turn_guidance_hud")
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = guidance.nextManeuver?.turnType?.iconEmoji ?: "⬆️",
+                                                    fontSize = 24.sp
+                                                )
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    val distLabel = if (guidance.distanceToNextManeuverMeters >= 1000) {
+                                                        String.format(Locale.US, "%.1f km", guidance.distanceToNextManeuverMeters / 1000.0)
+                                                    } else {
+                                                        "${guidance.distanceToNextManeuverMeters.toInt()} m"
+                                                    }
+                                                    Text(
+                                                        text = "$distLabel • ${guidance.nextManeuver?.instruction ?: "Lurus terus"}",
+                                                        style = MaterialTheme.typography.titleSmall,
+                                                        fontWeight = FontWeight.ExtraBold,
+                                                        color = GeoBluePrimary,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                    Text(
+                                                        text = if (voiceNavManager.isMuted) "🔇 Suara dimatikan" else "🔊 Panduan Suara Belokan Aktif",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        fontSize = 10.sp,
+                                                        color = if (voiceNavManager.isMuted) Color.Gray else StatusGreen
+                                                    )
+                                                }
+                                                // Mute / Unmute Button
+                                                IconButton(
+                                                    onClick = { voiceNavManager.toggleMute() },
+                                                    modifier = Modifier.size(32.dp).testTag("btn_toggle_voice_mute")
+                                                ) {
+                                                    Icon(
+                                                        imageVector = if (voiceNavManager.isMuted) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
+                                                        contentDescription = if (voiceNavManager.isMuted) "Nyalakan Suara" else "Matikan Suara",
+                                                        tint = if (voiceNavManager.isMuted) Color.Gray else GeoBluePrimary,
+                                                        modifier = Modifier.size(20.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
