@@ -36,6 +36,9 @@ import androidx.compose.runtime.setValue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.example.util.RoadNetworkEngine
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
@@ -228,6 +231,40 @@ fun OpenStreetMapTrackerView(
         }
     }
 
+    // Calculate dynamic vehicle bearing (GPS bearing when moving, phone compass when slow/stopped)
+    val effectiveBearing = when {
+        currentPoint != null && currentPoint.speedKmh >= 2.0 && currentPoint.bearing != 0f -> currentPoint.bearing
+        compassHeading > 0f -> compassHeading
+        currentPoint != null && currentPoint.bearing != 0f -> currentPoint.bearing
+        else -> 0f
+    }
+
+    // Auto 2.5D Perspective Navigasi (Aktif otomatis saat driver tracking, tanpa tombol apapun)
+    val navTilt by animateFloatAsState(
+        targetValue = if (isUserMode && isLiveTracking) 38f else 0f,
+        animationSpec = tween(durationMillis = 800),
+        label = "nav_tilt"
+    )
+    val navScale by animateFloatAsState(
+        targetValue = if (isUserMode && isLiveTracking) 1.25f else 1.0f,
+        animationSpec = tween(durationMillis = 800),
+        label = "nav_scale"
+    )
+
+    // Synchronize map orientation with vehicle heading in User/Driver Mode (Course-Up navigation)
+    LaunchedEffect(effectiveBearing, isUserMode, isLiveTracking) {
+        if (isUserMode && isLiveTracking) {
+            if (effectiveBearing > 0f) {
+                mapView.mapOrientation = -effectiveBearing
+            }
+        } else {
+            if (mapView.mapOrientation != 0f) {
+                mapView.mapOrientation = 0f
+            }
+        }
+        mapView.invalidate()
+    }
+
     // Camera centering behavior:
     // In User Mode (driver navigation): Keep camera centered on vehicle position.
     // In Admin Mode: The camera NEVER auto-centers or moves on its own while inspecting/panning!
@@ -248,7 +285,19 @@ fun OpenStreetMapTrackerView(
     Box(modifier = modifier.fillMaxSize().clipToBounds()) {
         AndroidView(
             factory = { mapView },
-            modifier = Modifier.fillMaxSize().clipToBounds().testTag("osm_map_view"),
+            modifier = Modifier
+                .fillMaxSize()
+                .clipToBounds()
+                .graphicsLayer {
+                    if (navTilt > 0.05f) {
+                        rotationX = navTilt
+                        cameraDistance = 14f * density
+                        scaleX = navScale
+                        scaleY = navScale
+                        translationY = 55.dp.toPx()
+                    }
+                }
+                .testTag("osm_map_view"),
             update = { map ->
                 map.overlays.clear()
 
@@ -348,7 +397,8 @@ fun OpenStreetMapTrackerView(
                             currentPoint.geofenceStatus,
                             currentPoint.accuracyMeters
                         )
-                        rotation = effectiveBearing
+                        // In 2.5D navigation mode (map rotated course-up), marker points straight ahead (0° on screen)
+                        rotation = if (isUserMode && isLiveTracking && effectiveBearing > 0f) -effectiveBearing else effectiveBearing
                         setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                     }
                     map.overlays.add(userMarker)

@@ -100,72 +100,74 @@ fun AppMapContainer(
             }
         }
 
-        // Map Engine Selector Pills (OSM vs Vector vs Google Maps)
-        Surface(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(14.dp),
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
-            shadowElevation = 6.dp
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
+        // Map Engine Selector Pills (Only shown in Admin mode so Driver map stays 100% clean without extra buttons)
+        if (!isUserMode) {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(14.dp),
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+                shadowElevation = 6.dp
             ) {
-                // OSM Chip
-                FilterChip(
-                    selected = selectedEngine == MapEngine.OPEN_STREET_MAP,
-                    onClick = { selectedEngine = MapEngine.OPEN_STREET_MAP },
-                    label = {
-                        Text(
-                            text = "OSM",
-                            fontSize = 11.sp,
-                            fontWeight = if (selectedEngine == MapEngine.OPEN_STREET_MAP) FontWeight.Bold else FontWeight.Normal
-                        )
-                    },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Public,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp)
-                        )
-                    },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = GeoBluePrimary,
-                        selectedLabelColor = Color.White,
-                        selectedLeadingIconColor = Color.White
-                    ),
-                    modifier = Modifier.testTag("chip_map_osm")
-                )
+                Row(
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // OSM Chip
+                    FilterChip(
+                        selected = selectedEngine == MapEngine.OPEN_STREET_MAP,
+                        onClick = { selectedEngine = MapEngine.OPEN_STREET_MAP },
+                        label = {
+                            Text(
+                                text = "OSM",
+                                fontSize = 11.sp,
+                                fontWeight = if (selectedEngine == MapEngine.OPEN_STREET_MAP) FontWeight.Bold else FontWeight.Normal
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Public,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = GeoBluePrimary,
+                            selectedLabelColor = Color.White,
+                            selectedLeadingIconColor = Color.White
+                        ),
+                        modifier = Modifier.testTag("chip_map_osm")
+                    )
 
-                Spacer(modifier = Modifier.width(4.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
 
-                // Tactical Vector Chip
-                FilterChip(
-                    selected = selectedEngine == MapEngine.TACTICAL_VECTOR,
-                    onClick = { selectedEngine = MapEngine.TACTICAL_VECTOR },
-                    label = {
-                        Text(
-                            text = "Vektor",
-                            fontSize = 11.sp,
-                            fontWeight = if (selectedEngine == MapEngine.TACTICAL_VECTOR) FontWeight.Bold else FontWeight.Normal
-                        )
-                    },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Layers,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp)
-                        )
-                    },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = GeoBluePrimary,
-                        selectedLabelColor = Color.White,
-                        selectedLeadingIconColor = Color.White
-                    ),
-                    modifier = Modifier.testTag("chip_map_vector")
-                )
+                    // Tactical Vector Chip
+                    FilterChip(
+                        selected = selectedEngine == MapEngine.TACTICAL_VECTOR,
+                        onClick = { selectedEngine = MapEngine.TACTICAL_VECTOR },
+                        label = {
+                            Text(
+                                text = "Vektor",
+                                fontSize = 11.sp,
+                                fontWeight = if (selectedEngine == MapEngine.TACTICAL_VECTOR) FontWeight.Bold else FontWeight.Normal
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Layers,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = GeoBluePrimary,
+                            selectedLabelColor = Color.White,
+                            selectedLeadingIconColor = Color.White
+                        ),
+                        modifier = Modifier.testTag("chip_map_vector")
+                    )
+                }
             }
         }
     }
