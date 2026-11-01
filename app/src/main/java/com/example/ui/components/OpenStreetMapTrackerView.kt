@@ -44,6 +44,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -250,14 +251,14 @@ fun OpenStreetMapTrackerView(
         else -> 0f
     }
 
-    // Seamless 3D Perspective Angle (Anchored near vehicle focus point so top map tiles remain 100% visible)
+    // Immersive 3D Perspective Angle with layout extension (100% full-bleed map coverage, zero top gap)
     val navTilt by animateFloatAsState(
-        targetValue = if (isUserMode && isLiveTracking) 38f else 15f,
+        targetValue = if (isUserMode && isLiveTracking) 36f else 20f,
         animationSpec = tween(durationMillis = 800),
         label = "nav_tilt"
     )
     val navScale by animateFloatAsState(
-        targetValue = if (isUserMode && isLiveTracking) 1.25f else 1.08f,
+        targetValue = if (isUserMode && isLiveTracking) 1.25f else 1.10f,
         animationSpec = tween(durationMillis = 800),
         label = "nav_scale"
     )
@@ -297,15 +298,27 @@ fun OpenStreetMapTrackerView(
         AndroidView(
             factory = { mapView },
             modifier = Modifier
+                .layout { measurable, constraints ->
+                    val extraTopPx = 180.dp.roundToPx()
+                    val targetHeight = constraints.maxHeight + extraTopPx
+                    val placeable = measurable.measure(
+                        constraints.copy(
+                            minHeight = targetHeight,
+                            maxHeight = targetHeight
+                        )
+                    )
+                    layout(constraints.maxWidth, constraints.maxHeight) {
+                        placeable.placeRelative(0, -extraTopPx)
+                    }
+                }
                 .fillMaxSize()
                 .graphicsLayer {
                     if (navTilt > 0.05f) {
                         rotationX = navTilt
-                        transformOrigin = TransformOrigin(0.5f, 0.75f) // Anchor rotation near vehicle location
-                        cameraDistance = 16f * density
+                        transformOrigin = TransformOrigin(0.5f, 0.15f) // Anchor near top edge so top stays flush
+                        cameraDistance = 14f * density
                         scaleX = navScale
-                        scaleY = navScale * 1.30f // Stretches top vertically to fill upper horizon seamlessly
-                        translationY = 10.dp.toPx()
+                        scaleY = navScale * 1.15f
                     }
                 }
                 .testTag("osm_map_view"),

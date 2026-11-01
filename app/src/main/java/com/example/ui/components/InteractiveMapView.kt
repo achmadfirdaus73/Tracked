@@ -56,6 +56,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
@@ -215,14 +216,26 @@ fun InteractiveMapView(
     Box(modifier = modifier.clipToBounds()) {
         Canvas(
             modifier = Modifier
+                .layout { measurable, constraints ->
+                    val extraTopPx = 180.dp.roundToPx()
+                    val targetHeight = constraints.maxHeight + extraTopPx
+                    val placeable = measurable.measure(
+                        constraints.copy(
+                            minHeight = targetHeight,
+                            maxHeight = targetHeight
+                        )
+                    )
+                    layout(constraints.maxWidth, constraints.maxHeight) {
+                        placeable.placeRelative(0, -extraTopPx)
+                    }
+                }
                 .fillMaxSize()
                 .graphicsLayer {
-                    rotationX = if (isUserMode && isLiveTracking) 38f else 15f
-                    transformOrigin = TransformOrigin(0.5f, 0.75f)
-                    cameraDistance = 16f * density
-                    scaleX = if (isUserMode && isLiveTracking) 1.25f else 1.08f
-                    scaleY = if (isUserMode && isLiveTracking) 1.45f else 1.20f
-                    translationY = 10.dp.toPx()
+                    rotationX = if (isUserMode && isLiveTracking) 36f else 20f
+                    transformOrigin = TransformOrigin(0.5f, 0.15f)
+                    cameraDistance = 14f * density
+                    scaleX = if (isUserMode && isLiveTracking) 1.25f else 1.10f
+                    scaleY = if (isUserMode && isLiveTracking) 1.30f else 1.12f
                 }
                 .testTag("interactive_canvas_map")
                 .pointerInput(Unit) {
