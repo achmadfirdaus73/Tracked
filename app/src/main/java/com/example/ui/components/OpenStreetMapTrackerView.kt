@@ -38,11 +38,12 @@ import kotlinx.coroutines.withContext
 import com.example.util.RoadNetworkEngine
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -91,23 +92,33 @@ fun OpenStreetMapTrackerView(
 ) {
     val context = LocalContext.current
 
-    // Initialize osmdroid configuration
+    // Initialize osmdroid configuration & tile caching for maximum performance
     DisposableEffect(Unit) {
-        Configuration.getInstance().load(context, PreferenceManager.getDefaultSharedPreferences(context))
-        Configuration.getInstance().userAgentValue = context.packageName
+        val config = Configuration.getInstance()
+        config.load(context, PreferenceManager.getDefaultSharedPreferences(context))
+        config.userAgentValue = context.packageName
+        config.cacheMapTileCount = 128.toShort()
+        config.tileDownloadThreads = 8.toShort()
+        config.tileFileSystemCacheMaxBytes = 200L * 1024 * 1024 // 200MB fast disk cache
+        config.tileFileSystemCacheTrimBytes = 150L * 1024 * 1024
         onDispose { }
     }
 
     val mapView = remember {
         MapView(context).apply {
-            setTileSource(TileSourceFactory.MAPNIK) // Free OpenStreetMap tiles
+            setTileSource(TileSourceFactory.MAPNIK) // Fast OpenStreetMap tile provider
             setMultiTouchControls(true)
             zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
+            isHorizontalMapRepetitionEnabled = false
+            isVerticalMapRepetitionEnabled = false
+            setHasTransientState(true)
+            // Enable hardware layer acceleration for smooth pan & tilt
+            setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
             setOnTouchListener { v, _ ->
                 v.parent?.requestDisallowInterceptTouchEvent(true)
                 false
             }
-            val initialZoom = if (isUserMode && isLiveTracking) 18.0 else 16.5
+            val initialZoom = if (isUserMode && isLiveTracking) 18.2 else 16.5
             controller.setZoom(initialZoom)
             val initialLat = currentPoint?.latitude ?: routePoints.lastOrNull()?.latitude ?: -6.2088
             val initialLng = currentPoint?.longitude ?: routePoints.lastOrNull()?.longitude ?: 106.8456
@@ -144,7 +155,7 @@ fun OpenStreetMapTrackerView(
     // Auto zoom-in when live tracking is active on the user side
     LaunchedEffect(isLiveTracking, isUserMode) {
         if (isUserMode && isLiveTracking && currentPoint != null) {
-            mapView.controller.setZoom(18.0)
+            mapView.controller.setZoom(18.2)
             mapView.controller.animateTo(GeoPoint(currentPoint.latitude, currentPoint.longitude))
         }
     }
@@ -239,14 +250,14 @@ fun OpenStreetMapTrackerView(
         else -> 0f
     }
 
-    // Auto 2.5D Perspective Navigasi (Aktif otomatis saat driver tracking, tanpa tombol apapun)
+    // Seamless 3D Perspective Angle (Anchored near vehicle focus point so top map tiles remain 100% visible)
     val navTilt by animateFloatAsState(
-        targetValue = if (isUserMode && isLiveTracking) 38f else 0f,
+        targetValue = if (isUserMode && isLiveTracking) 38f else 15f,
         animationSpec = tween(durationMillis = 800),
         label = "nav_tilt"
     )
     val navScale by animateFloatAsState(
-        targetValue = if (isUserMode && isLiveTracking) 1.25f else 1.0f,
+        targetValue = if (isUserMode && isLiveTracking) 1.25f else 1.08f,
         animationSpec = tween(durationMillis = 800),
         label = "nav_scale"
     )
@@ -287,14 +298,14 @@ fun OpenStreetMapTrackerView(
             factory = { mapView },
             modifier = Modifier
                 .fillMaxSize()
-                .clipToBounds()
                 .graphicsLayer {
                     if (navTilt > 0.05f) {
                         rotationX = navTilt
-                        cameraDistance = 14f * density
+                        transformOrigin = TransformOrigin(0.5f, 0.75f) // Anchor rotation near vehicle location
+                        cameraDistance = 16f * density
                         scaleX = navScale
-                        scaleY = navScale
-                        translationY = 55.dp.toPx()
+                        scaleY = navScale * 1.30f // Stretches top vertically to fill upper horizon seamlessly
+                        translationY = 10.dp.toPx()
                     }
                 }
                 .testTag("osm_map_view"),

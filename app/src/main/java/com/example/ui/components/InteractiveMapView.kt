@@ -54,6 +54,8 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
@@ -214,6 +216,14 @@ fun InteractiveMapView(
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
+                .graphicsLayer {
+                    rotationX = if (isUserMode && isLiveTracking) 38f else 15f
+                    transformOrigin = TransformOrigin(0.5f, 0.75f)
+                    cameraDistance = 16f * density
+                    scaleX = if (isUserMode && isLiveTracking) 1.25f else 1.08f
+                    scaleY = if (isUserMode && isLiveTracking) 1.45f else 1.20f
+                    translationY = 10.dp.toPx()
+                }
                 .testTag("interactive_canvas_map")
                 .pointerInput(Unit) {
                     coroutineScope {
@@ -656,14 +666,15 @@ private fun DrawScope.drawMapBase(
     height: Float
 ) {
     val bgColor = if (isDark) Color(0xFF0F172A) else Color(0xFFF1F5F9)
-    val blockColor = if (isDark) Color(0xFF1E293B) else Color(0xFFE2E8F0)
-    val roadColor = if (isDark) Color(0xFF334155) else Color(0xFFFFFFFF)
+    val blockColor = if (isDark) Color(0xFF1E293B) else Color(0xFFFFFFFF)
+    val blockWallColor = if (isDark) Color(0xFF020617) else Color(0xFFCBD5E1) // 3D wall shadow volume
+    val roadColor = if (isDark) Color(0xFF334155) else Color(0xFFCBD5E1)
     val highwayColor = if (isDark) Color(0xFF475569) else Color(0xFFFEF3C7)
     val parkColor = if (isDark) Color(0xFF064E3B) else Color(0xFFDCFCE7)
 
     drawRect(color = bgColor, size = size)
 
-    // Render urban grid blocks
+    // Render urban grid blocks with 3D volumetric depth
     val gridSize = 140f
     val offsetX = (centerX % gridSize)
     val offsetY = (centerY % gridSize)
@@ -673,10 +684,19 @@ private fun DrawScope.drawMapBase(
             val drawX = x.toFloat() + offsetX - gridSize
             val drawY = y.toFloat() + offsetY - gridSize
 
-            // Alternate some blocks as parks or civic spaces
             val isPark = (x / gridSize.toInt() + y / gridSize.toInt()) % 5 == 0
             val bColor = if (isPark) parkColor else blockColor
 
+            // 1. Draw 3D building wall shadow extrusion (gives 3D depth to city blocks)
+            val wallOffset = 10f
+            drawRoundRect(
+                color = blockWallColor,
+                topLeft = Offset(drawX + 14f + wallOffset, drawY + 14f + wallOffset),
+                size = androidx.compose.ui.geometry.Size(gridSize - 28f, gridSize - 28f),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(10f, 10f)
+            )
+
+            // 2. Draw 3D building roof
             drawRoundRect(
                 color = bColor,
                 topLeft = Offset(drawX + 14f, drawY + 14f),
